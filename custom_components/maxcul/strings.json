@@ -32,7 +32,9 @@
       }
     },
     "error": {
-      "cannot_connect_to_device": "Could not communicate with a CUL at this address. Check the path, host, port, permissions, and that the device is powered on."
+      "cannot_connect_to_device": "Could not communicate with a CUL at this address. Check the path, host, port, permissions, and that the device is powered on.",
+      "cul_in_use": "This CUL serial port is already in use by another application or Docker container. Stop the other process, then try again.",
+      "cul_no_response": "The CUL did not return a valid firmware version. Check the connection and firmware, and make sure no other application or Docker container is using the CUL."
     },
     "abort": {
       "already_configured": "This CUL connection is already configured."

@@ -23,6 +23,11 @@ from . import (
     DOMAIN,
     normalize_device_path,
 )
+from ._vendor.pymaxcul._const import CUL_BAUDRATE
+from ._vendor.pymaxcul._io import (
+    is_cul_version_response,
+    is_serial_port_in_use,
+)
 from ._vendor.pymaxcul._telnet import TelnetSerial
 
 LOGGER = logging.getLogger(__name__)
@@ -88,14 +93,15 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
             )
             device_path = device_path or port.device
 
-            if await test_connection(self.hass, device_path):
+            connection_error = await test_connection(self.hass, device_path)
+            if connection_error is None:
                 title = port.description or port.device
                 title += f" (s/n: {port.serial_number or 'n/a'})"
                 if port.manufacturer:
                     title += f" - {port.manufacturer}"
                 return await self._async_create_entry(device_path, title)
 
-            errors["base"] = "cannot_connect_to_device"
+            errors["base"] = connection_error
 
         schema = vol.Schema({vol.Required(CONF_DEVICE_PATH): vol.In(port_labels)})
         return self.async_show_form(
@@ -110,9 +116,10 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             device_path = user_input[CONF_DEVICE_PATH].strip()
-            if await test_connection(self.hass, device_path):
+            connection_error = await test_connection(self.hass, device_path)
+            if connection_error is None:
                 return await self._async_create_entry(device_path, device_path)
-            errors["base"] = "cannot_connect_to_device"
+            errors["base"] = connection_error
 
         schema = vol.Schema(
             {
@@ -145,9 +152,10 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
 
             device_path = f"telnet://{formatted_host}:{port}"
 
-            if await test_connection(self.hass, device_path):
+            connection_error = await test_connection(self.hass, device_path)
+            if connection_error is None:
                 return await self._async_create_entry(device_path, f"{host}:{port}")
-            errors["base"] = "cannot_connect_to_device"
+            errors["base"] = connection_error
 
         schema = vol.Schema(
             {
@@ -185,12 +193,12 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
         return MaxculOptionsFlowHandler(config_entry)
 
 
-async def test_connection(hass: HomeAssistant, device_path: str) -> bool:
-    """Check that a serial or telnet device responds as a CUL."""
+async def test_connection(hass: HomeAssistant, device_path: str) -> str | None:
+    """Return a config-flow error if a CUL cannot be reached."""
     return await hass.async_add_executor_job(_test_connection, device_path)
 
 
-def _test_connection(device_path: str) -> bool:
+def _test_connection(device_path: str) -> str | None:
     """Open, probe, and close a CUL device outside the event loop."""
     connection: Serial | TelnetSerial | None = None
     try:
@@ -198,13 +206,22 @@ def _test_connection(device_path: str) -> bool:
             telnet_path = f"telnet://{device_path[len('telnet://'):]}"
             connection = TelnetSerial(telnet_path, 0.5)
         else:
-            connection = Serial(device_path, timeout=0.5)
+            connection = Serial(
+                device_path,
+                baudrate=CUL_BAUDRATE,
+                timeout=0.5,
+                exclusive=True,
+            )
 
         # Some CUL devices need time to initialize before they answer commands.
-        return _get_cul_version(connection)
+        if _get_cul_version(connection):
+            return None
+        return "cul_no_response"
     except (OSError, SerialException, ValueError) as err:
         LOGGER.debug("Unable to connect to MaxCUL device %s: %s", device_path, err)
-        return False
+        if is_serial_port_in_use(err):
+            return "cul_in_use"
+        return "cannot_connect_to_device"
     finally:
         if connection is not None:
             try:
@@ -217,9 +234,12 @@ def _get_cul_version(connection: Serial | TelnetSerial) -> bool:
     """Wait for the CUL firmware response to a version request."""
     time.sleep(2)
     for _ in range(10):
-        connection.write(b"V\n")
+        connection.write(b"V\r\n")
         time.sleep(1)
-        if connection.readline():
+        response = connection.readline()
+        if response and is_cul_version_response(
+            response.decode("utf-8", errors="replace")
+        ):
             return True
     return False
 

@@ -479,7 +479,16 @@ pytest
 - **Could not communicate with a CUL:** check that the CUL is powered on, that
   the serial path is correct, that Home Assistant can access the serial device,
   or that the telnet host and port are reachable. On Linux, the Home Assistant
-  process may need permission to access the serial device.
+  process may need permission to access the serial device. CulMax verifies the
+  CUL firmware response during setup and reports an error if it is missing.
+- **CUL serial port is already in use:** stop other applications or Docker
+  containers that use the CUL (for example, another Home Assistant or FHEM
+  instance), then retry setup or reload the CulMax integration. A serial CUL
+  must be controlled by one application at a time.
+- **CulMax reports that the CUL connection was lost:** check the device path,
+  USB passthrough, and whether another process has taken the serial port. If
+  repeated reconnect attempts fail, restore exclusive access and reload the
+  integration.
 - **Pairing service cannot find the connection:** enter the same serial path or
   telnet address used to set up that config entry.
 - **A paired device is missing after restart:** the integration restores devices

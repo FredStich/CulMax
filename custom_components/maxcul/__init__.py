@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,10 +14,15 @@ from uuid import uuid4
 import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import (
+    ConfigEntryNotReady,
+    HomeAssistantError,
+    ServiceValidationError,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -37,6 +44,7 @@ from ._vendor.pymaxcul._const import (
     ATTR_MEASURED_TEMPERATURE,
     ATTR_MODE,
     ATTR_VALVE_POSITION,
+    EVENT_CONNECTION_STATUS,
     DEVICE_TYPES_BY_NAME,
     HEATING_THERMOSTAT,
     HEATING_THERMOSTAT_PLUS,
@@ -60,6 +68,7 @@ LOGGER = logging.getLogger(__name__)
 DOMAIN = "maxcul"
 
 PLATFORMS = ["climate", "binary_sensor", "switch"]
+CONNECTION_STARTUP_TIMEOUT = 20
 
 CONF_DEVICE_PATH = "device_path"
 CONF_SENDER_ID = "sender_id"
@@ -595,10 +604,20 @@ async def async_setup_entry(
         hass,
         device_path=device_path,
         sender_id=sender_id,
+        config_entry_id=config_entry.entry_id,
     )
     connection.start()
-
     config_entry.runtime_data = connection
+    connected = await hass.async_add_executor_job(
+        connection.wait_for_initial_connection, CONNECTION_STARTUP_TIMEOUT
+    )
+    if not connected:
+        connection_error = connection.connection_error
+        await hass.async_add_executor_job(connection.stop)
+        raise ConfigEntryNotReady(
+            connection_error
+            or f"No valid CUL firmware response received from {device_path}"
+        )
 
     # Remove devices from the registry that are no longer part of the entry.
     known_devices = config_entry.data.get(CONF_DEVICES) or {}
@@ -626,6 +645,7 @@ async def async_setup_entry(
             LOGGER.exception("Failed to stop MaxCUL connection after setup failure")
         raise
 
+    connection.mark_setup_complete()
     return True
 
 
@@ -638,6 +658,7 @@ async def async_unload_entry(
     )
 
     if unload_ok:
+        config_entry.runtime_data.dismiss_connection_notification()
         # Stopping joins the worker thread, so keep it off the event loop.
         await hass.async_add_executor_job(config_entry.runtime_data.stop)
 
@@ -648,10 +669,24 @@ class MaxCulConnection:
     """Wrapper around the maxcul connection thread."""
 
     def __init__(
-        self, hass: HomeAssistant, device_path: str, sender_id: int | None = None
+        self,
+        hass: HomeAssistant,
+        device_path: str,
+        sender_id: int | None = None,
+        config_entry_id: str | None = None,
     ) -> None:
         self._hass = hass
         self._device_path = device_path
+        self._config_entry_id = config_entry_id or re.sub(
+            r"[^a-zA-Z0-9_]", "_", normalize_device_path(device_path)
+        )
+        self._connection_notification_id = (
+            f"{DOMAIN}_connection_{self._config_entry_id}"
+        )
+        self._connection_ready = threading.Event()
+        self._connection_status: bool | None = None
+        self._connection_error: str | None = None
+        self._setup_complete = False
 
         if sender_id is None:
             sender_id = 0x123456
@@ -701,12 +736,78 @@ class MaxCulConnection:
         """Stop the connection thread."""
         self._connection.stop()
 
+    @property
+    def connection_error(self) -> str | None:
+        """Return the last reason the CUL could not be reached."""
+        return self._connection_error
+
+    def wait_for_initial_connection(self, timeout: float) -> bool:
+        """Wait for the first CUL reachability result."""
+        if not self._connection_ready.wait(timeout):
+            return False
+        return self._connection_status is True
+
+    def mark_setup_complete(self) -> None:
+        """Enable runtime notifications after entity setup succeeds."""
+        self._setup_complete = True
+        if self._connection_status is False:
+            self._hass.async_create_task(
+                self._async_handle_connection_status(
+                    False, self._connection_error
+                )
+            )
+
+    def dismiss_connection_notification(self) -> None:
+        """Remove a previous connection warning."""
+        persistent_notification.async_dismiss(
+            self._hass, self._connection_notification_id
+        )
+
+    async def _async_handle_connection_status(
+        self, connected: bool, error: str | None
+    ) -> None:
+        if connected:
+            self.dismiss_connection_notification()
+            return
+        if not self._setup_complete:
+            return
+
+        retry_message = (
+            "CulMax is attempting to reconnect."
+            if error == "CUL connection lost; reconnecting"
+            else "Repeated reconnection attempts failed. Reload the CulMax "
+            "integration after restoring access to the CUL."
+        )
+        message = (
+            f"CulMax cannot communicate with the CUL at {self._device_path}. "
+            f"{error or 'No valid firmware response was received.'} "
+            "Check that the device is connected and that no other application "
+            "or Docker container is using its serial port. "
+            f"{retry_message}"
+        )
+        persistent_notification.async_create(
+            self._hass,
+            message,
+            title="CulMax CUL connection lost",
+            notification_id=self._connection_notification_id,
+        )
+
     def _callback(self, event, payload) -> None:
         """Handle events from the connection thread (not the event loop).
 
         dispatcher_send is thread-safe and may be used from here.
         """
-        if event == EVENT_DEVICE_PAIRED:
+        if event == EVENT_CONNECTION_STATUS:
+            connected = payload["connected"]
+            error = payload.get("error")
+            self._connection_status = connected
+            self._connection_error = error
+            self._connection_ready.set()
+            self._hass.add_job(
+                self._async_handle_connection_status, connected, error
+            )
+
+        elif event == EVENT_DEVICE_PAIRED:
             payload[ATTR_CONNECTION_DEVICE_PATH] = self._device_path
             dispatcher_send(self._hass, SIGNAL_DEVICE_PAIRED, payload)
 

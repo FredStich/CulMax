@@ -2,7 +2,7 @@ import pytest
 
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from pytest_homeassistant_custom_component.common import (
@@ -37,13 +37,37 @@ from custom_components.maxcul._vendor.pymaxcul._messages import (
     WallThermostatControlMessage,
 )
 
-from .conftest import MockConnectionFactory, max_connection_factory
+from .conftest import MockConnection, MockConnectionFactory, max_connection_factory
 
 
 def test_normalize_device_path():
     assert normalize_device_path("TELNET://MAXCUL.local:2323") == "maxcul.local:2323"
     assert normalize_device_path("maxcul.local:2323") == "maxcul.local:2323"
     assert normalize_device_path("/dev/ttyUSB0") == "/dev/ttyUSB0"
+
+
+async def test_setup_fails_when_cul_does_not_report_firmware(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Surface an unavailable CUL as a config-entry setup error."""
+    monkeypatch.setattr(
+        MockConnection,
+        "wait_for_initial_connection",
+        lambda _self, _timeout: False,
+    )
+    monkeypatch.setattr(
+        MockConnection,
+        "connection_error",
+        property(lambda _self: "CUL did not return a valid firmware version"),
+    )
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_DEVICE_PATH: "/dev/ttyACM0", CONF_DEVICES: {}},
+    )
+
+    with pytest.raises(ConfigEntryNotReady, match="valid firmware version"):
+        await async_setup_entry(hass, config_entry)
 
 
 async def test_wall_thermostat_control_message_dispatches_temperature(

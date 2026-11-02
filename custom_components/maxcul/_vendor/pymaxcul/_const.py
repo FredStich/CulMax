@@ -7,6 +7,9 @@ SHUTTER_CONTACT = 'ShutterContact'
 PUSH_BUTTON = 'PushButton'
 PLUG_ADAPTER = 'PlugAdapter'
 
+CUL_BAUDRATE = 38400
+EVENT_CONNECTION_STATUS = "connection_status"
+
 # local constants
 DEVICE_TYPES = {
     0: CUBE,

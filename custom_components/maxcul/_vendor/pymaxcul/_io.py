@@ -1,6 +1,7 @@
 """ This module implements the low level logic of talking to the serial CUL device"""
 import queue
 from collections import deque
+import re
 import threading
 import time
 import logging
@@ -19,12 +20,16 @@ COMMAND_REQUEST_BUDGET = 'X'
 MIN_REQUIRED_BUDGET = 1500
 COMMAND_CHARACTER_WEIGHT = 30
 
+CUL_VERSION_PATTERN = re.compile(r"^V\s+\d+(?:\.\d+)*(?:\s+.+)?$")
+
 
 class CulIoThread(threading.Thread):
     """Low-level serial communication thread base"""
 
     # pylint: disable=too-many-instance-attributes
-    def __init__(self, device_path, baudrate, sent_callback=None):
+    def __init__(
+        self, device_path, baudrate, sent_callback=None, connection_callback=None
+    ):
         super().__init__()
         self.read_queue = queue.Queue()
         self._send_queue = deque([], MAX_QUEUED_COMMANDS)
@@ -35,6 +40,10 @@ class CulIoThread(threading.Thread):
         self._com_port = None
         self._remaining_budget = 0
         self._sent_callback = sent_callback
+        self._connection_callback = connection_callback
+        self._connection_status = None
+        self._connection_error = None
+        self._connection_ready = threading.Event()
         self._waiting_for_budget = False
         self._last_serial_reopen = time.monotonic()
 
@@ -42,6 +51,17 @@ class CulIoThread(threading.Thread):
     def cul_version(self):
         """Returns the version reported from the CUL stick"""
         return self._cul_version
+
+    @property
+    def connection_error(self):
+        """Return the last reason the CUL could not be reached."""
+        return self._connection_error
+
+    def wait_for_connection(self, timeout=None):
+        """Wait for the first CUL reachability result."""
+        if not self._connection_ready.wait(timeout):
+            return None
+        return self._connection_status
 
     @property
     def has_send_budget(self):
@@ -135,11 +155,19 @@ class CulIoThread(threading.Thread):
 
     def _init_cul(self):
         if not self._open_serial_device():
+            if self._connection_status is None:
+                self._report_connection_status(
+                    False, "CUL did not return a valid firmware version"
+                )
             self._stop_requested.set()
             return
 
         if self._com_port is None:
             LOGGER.error("No version from CUL, cannot communicate")
+            if self._connection_status is None:
+                self._report_connection_status(
+                    False, "CUL did not return a valid firmware version"
+                )
             self._stop_requested.set()
 
     def _open_serial_device(self):
@@ -153,9 +181,23 @@ class CulIoThread(threading.Thread):
             self._com_port = Serial(
                 self._device_path,
                 self._baudrate,
-                timeout=READLINE_TIMEOUT)
+                timeout=READLINE_TIMEOUT,
+                exclusive=True,
+            )
         except SerialException as err:
-            LOGGER.error("Unable to open serial device <%s>", err)
+            if is_serial_port_in_use(err):
+                self._report_connection_status(
+                    False,
+                    "Serial device is locked by another process; stop the other "
+                    "application or container",
+                )
+                LOGGER.error(
+                    "Serial device %s is already in use by another process: %s",
+                    self._device_path,
+                    err,
+                )
+            else:
+                LOGGER.error("Unable to open serial device <%s>", err)
             return False
 
         return self._initialize_serial_device()
@@ -179,8 +221,11 @@ class CulIoThread(threading.Thread):
         for _ in range(10):
             self._writeline("V")
             time.sleep(1)
-            self._cul_version = self._readline() or None
-            if self._cul_version is not None:
+            response = self._readline()
+            self._cul_version = (
+                response if is_cul_version_response(response) else None
+            )
+            if self._cul_version:
                 LOGGER.debug("CUL reported version %s", self._cul_version)
                 break
             else:
@@ -188,6 +233,9 @@ class CulIoThread(threading.Thread):
         if self._cul_version is None:
             self._com_port.close()
             self._com_port = None
+            self._report_connection_status(
+                False, "CUL did not return a valid firmware version to command V"
+            )
             return False
         # enable reporting of message strength
         self._writeline("X21")
@@ -201,9 +249,11 @@ class CulIoThread(threading.Thread):
         # request first budget
         self._writeline(COMMAND_REQUEST_BUDGET)
         time.sleep(0.3)
+        self._report_connection_status(True, None)
         return True
 
     def _reopen_serial_device(self):
+        self._report_connection_status(False, "CUL connection lost; reconnecting")
         if self._com_port:
             try:
                 self._com_port.close()
@@ -216,7 +266,23 @@ class CulIoThread(threading.Thread):
             if self._open_serial_device():
                 return True
             time.sleep(timeout)
+        self._report_connection_status(
+            False, "Unable to reopen the CUL device after repeated attempts"
+        )
         return False
+
+    def _report_connection_status(self, connected, error):
+        """Notify the connection wrapper when CUL reachability changes."""
+        if (
+            connected == self._connection_status
+            and (connected or error == self._connection_error)
+        ):
+            return
+        self._connection_status = connected
+        self._connection_error = error
+        self._connection_ready.set()
+        if self._connection_callback is not None:
+            self._connection_callback(connected, error)
 
     def _writeline(self, command):
         """Sends given command to CUL. Invalidates has_send_budget if command starts with Zs"""
@@ -249,3 +315,14 @@ class CulIoThread(threading.Thread):
                 LOGGER.error("Unable to reopen serial device, quitting")
                 self._stop_requested.set()
                 return None
+
+
+def is_cul_version_response(response):
+    """Return whether a line contains a recognizable CUL firmware version."""
+    return bool(response and CUL_VERSION_PATTERN.fullmatch(response.strip()))
+
+
+def is_serial_port_in_use(error):
+    """Identify pyserial's explicit exclusive-port-lock failure."""
+    message = str(error).casefold()
+    return "exclusive" in message and "lock" in message

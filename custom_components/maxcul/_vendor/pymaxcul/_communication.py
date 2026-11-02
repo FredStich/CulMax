@@ -45,7 +45,11 @@ from ._const import (
     EVENT_SHUTTER_UPDATE, EVENT_PUSH_BUTTON_UPDATE,
     ATTR_DEVICE_ID, ATTR_DESIRED_TEMPERATURE, ATTR_MEASURED_TEMPERATURE,
     ATTR_MODE, ATTR_BATTERY_LOW, ATTR_DEVICE_TYPE, ATTR_DEVICE_SERIAL,
-    ATTR_FIRMWARE_VERSION, ATTR_STATE, ATTR_VALVE_POSITION
+    ATTR_FIRMWARE_VERSION,
+    ATTR_STATE,
+    ATTR_VALVE_POSITION,
+    CUL_BAUDRATE,
+    EVENT_CONNECTION_STATUS,
 )
 
 # local constants
@@ -55,7 +59,7 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_CUBE_ID = 0x123456
 
 DEFAULT_DEVICE = '/dev/ttyUSB0'
-DEFAULT_BAUDRATE = '38400'
+DEFAULT_BAUDRATE = CUL_BAUDRATE
 DEFAULT_PAIRING_TIMOUT = 30
 
 BACKOFF_INTERVAL = 10
@@ -77,7 +81,9 @@ class MaxConnection(threading.Thread):
         self.com_thread = CulIoThread(
             device_path,
             baudrate,
-            sent_callback=self._sent_callback)
+            sent_callback=self._sent_callback,
+            connection_callback=self._connection_status_changed,
+        )
         self.stop_requested = threading.Event()
         self._pairing_enabled = threading.Event()
         # Broadcast filtering runs for every received frame, so keep lookups O(1).
@@ -88,10 +94,22 @@ class MaxConnection(threading.Thread):
 
     def run(self):
         self.com_thread.start()
-        while not self.stop_requested.is_set():
+        while not self.stop_requested.is_set() and self.com_thread.is_alive():
             self._receive_message()
             self._resend_message()
             time.sleep(0.3)
+        if not self.com_thread.is_alive():
+            self.stop_requested.set()
+
+    def wait_for_connection(self, timeout=None):
+        """Wait for the low-level thread's first CUL reachability result."""
+        return self.com_thread.wait_for_connection(timeout)
+
+    def _connection_status_changed(self, connected, error):
+        self._call_callback(
+            EVENT_CONNECTION_STATUS,
+            {"connected": connected, "error": error},
+        )
 
     def stop(self, timeout=None):
         LOGGER.info("Stopping MAXCUL")

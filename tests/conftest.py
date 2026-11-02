@@ -23,13 +23,15 @@ class MockConnectionFactory():
         self.connections: Dict[str, MockConnection] = {}
 
     def get_create_function(self):
-        def create_function(hass, device_path, sender_id):
-            return self.create(hass, device_path, sender_id)
+        def create_function(hass, device_path, sender_id, config_entry_id=None):
+            return self.create(hass, device_path, sender_id, config_entry_id)
 
         return create_function
 
-    def create(self, hass, device_path, sender_id):
-        connection = MockConnection(hass, device_path, sender_id)
+    def create(self, hass, device_path, sender_id, config_entry_id=None):
+        connection = MockConnection(
+            hass, device_path, sender_id, config_entry_id
+        )
         self.connections[device_path] = connection
         return connection
 
@@ -39,12 +41,19 @@ class MockConnection(MaxCulConnection):
         self,
         hass,
         device_path,
-        sender_id
+        sender_id,
+        config_entry_id=None,
     ):
-        super().__init__(hass, device_path, sender_id)
+        super().__init__(hass, device_path, sender_id, config_entry_id)
 
     def start(self):
         pass
+
+    def stop(self):
+        pass
+
+    def wait_for_initial_connection(self, timeout):
+        return True
 
     def enable_pairing(self, duration):
         pass
