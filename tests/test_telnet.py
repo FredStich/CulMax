@@ -102,6 +102,30 @@ def test_io_thread_returns_line_after_reconnecting() -> None:
     assert io_thread._readline() == "Zmessage"
 
 
+def test_io_thread_closes_connection_when_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OpenPort:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    io_thread = _io.CulIoThread("/dev/ttyACM0", 38400)
+    port = OpenPort()
+
+    def initialize_connection() -> None:
+        io_thread._com_port = port
+        io_thread._stop_requested.set()
+
+    monkeypatch.setattr(io_thread, "_init_cul", initialize_connection)
+
+    io_thread.run()
+
+    assert port.closed
+    assert io_thread._com_port is None
+
+
 def test_paired_devices_use_unique_membership_entries() -> None:
     connection = _communication.MaxConnection(paired_devices=[123, 123])
 

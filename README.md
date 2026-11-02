@@ -488,7 +488,10 @@ pytest
 - **CUL serial port is already in use:** stop other applications or Docker
   containers that use the CUL (for example, another Home Assistant or FHEM
   instance), then retry setup or reload the CulMax integration. A serial CUL
-  must be controlled by one application at a time.
+  must be controlled by one application at a time. CulMax closes its serial
+  connection when its worker stops, including during reload. If the lock
+  persists after an options-triggered reload from an earlier CulMax version,
+  restart Home Assistant once to release the stale serial handle.
 - **CulMax reports that the CUL connection was lost:** check the device path,
   USB passthrough, and whether another process has taken the serial port. If
   repeated reconnect attempts fail, restore exclusive access and reload the

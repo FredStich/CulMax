@@ -78,9 +78,21 @@ class CulIoThread(threading.Thread):
         self.join(timeout)
 
     def run(self):
-        self._init_cul()
-        while not self._stop_requested.is_set():
-            self._loop()
+        try:
+            self._init_cul()
+            while not self._stop_requested.is_set():
+                self._loop()
+        finally:
+            if self._com_port is not None:
+                try:
+                    self._com_port.close()
+                except (OSError, SerialException, TelnetException):
+                    LOGGER.exception(
+                        "Unable to close CUL connection for %s",
+                        self._device_path,
+                    )
+                finally:
+                    self._com_port = None
 
     def _loop(self):
         now = time.monotonic()
