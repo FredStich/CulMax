@@ -4,11 +4,12 @@ Control MAX! eQ-3 radiator thermostats, wall thermostats, shutter contacts,
 Eco Tasters, and Plug Adapters using a CUL device connected to Home Assistant
 over USB/serial or a network telnet connection.
 
-> **Note:** This integration was originally written for personal use and is not
+> **Former Note of PowerPaul:** This integration was originally written for personal use and is not
 > actively maintained. Hardware, firmware, and Home Assistant versions may
 > affect compatibility. It is intentionally not distributed through HACS.
 > Contributions and bug reports are welcome.
 >
+> **My Note by Fred:**
 > I used to run FHEM with a MAX! CUL in Docker on a QNAP NAS, but it was time
 > to move to Home Assistant. I chose the sleek MAX! thermostats because they
 > communicate directly with the window contacts, so the heating control keeps
