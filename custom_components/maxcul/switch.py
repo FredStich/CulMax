@@ -110,7 +110,7 @@ class MaxPlugAdapter(SwitchEntity):
             "name": self._name,
             "manufacturer": "eQ-3 / MAX!",
             "model": "Plug Adapter",
-            "configuration_url": "https://github.com/powerpaul17/maxcul",
+            "configuration_url": "https://github.com/FredStich/CulMax",
         }
 
     @property

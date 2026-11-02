@@ -47,7 +47,7 @@ class MaxShutter(BinarySensorEntity):
             "name": self.name,
             "manufacturer": "eQ-3 / MAX!",
             "model": "Window Contact",
-            "configuration_url": "https://github.com/powerpaul17/maxcul",
+            "configuration_url": "https://github.com/FredStich/CulMax",
         }
 
     async def async_added_to_hass(self) -> None:

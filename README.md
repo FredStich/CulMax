@@ -17,10 +17,41 @@ over USB/serial or a network telnet connection.
 
 ## Install
 
-Copy `custom_components/maxcul` into the `custom_components` directory of your
-Home Assistant configuration, then restart Home Assistant.
-On Home Assistant 2026.3 and newer, the integration icon is loaded from the
-included brand assets and appears in the integration list after restart.
+This integration is installed manually; it is not distributed through HACS.
+
+1. Find your Home Assistant configuration directory. It is the directory that
+   contains `configuration.yaml` (commonly `/config` on Home Assistant OS).
+2. Download and extract the [CulMax project archive](https://github.com/FredStich/CulMax)
+   to your computer.
+3. In the configuration directory, open `custom_components`. Create this
+   directory if it does not exist.
+4. Copy the complete `custom_components/maxcul` directory from the extracted
+   project into your Home Assistant `custom_components` directory. The
+   resulting path must be
+   `CONFIG_DIR/custom_components/maxcul/manifest.json`.
+
+   For example, the folder layout should look like this:
+
+   ```text
+   CONFIG_DIR/
+   ├── configuration.yaml
+   └── custom_components/
+       └── maxcul/
+           ├── manifest.json
+           ├── __init__.py
+           └── ...
+   ```
+
+   Copy the `maxcul` directory itself, not the repository's outer directory
+   and not just the files inside `maxcul`.
+5. Restart Home Assistant. On Home Assistant 2026.3 and newer, the integration
+   icon is loaded from the included brand assets.
+6. Continue with [Set up](#set-up) to add the integration and connect your CUL.
+
+For an update, back up your existing `custom_components/maxcul` directory,
+replace it with the new one, and restart Home Assistant. Do not remove the
+integration entry from Home Assistant; its saved device and option data is
+stored separately from the integration files.
 
 ## Set up
 
@@ -45,8 +76,8 @@ paired devices.
 | MAX! heating thermostat | Climate entity with target temperature, mode, preset, and reported valve position |
 | MAX! wall thermostat | Climate entity |
 | MAX! shutter contact | Window binary sensor |
-| MAX! Eco Taster | Binary sensor for its reported on/off state and battery status |
-| MAX! Plug Adapter | Outlet switch with reported state and on/off control |
+| MAX! eco Taster | Binary sensor for its reported on/off state and battery status |
+| MAX! plug Adapter | Outlet switch with reported state and on/off control |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
 

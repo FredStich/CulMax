@@ -156,7 +156,7 @@ class MaxBattery(BinarySensorEntity):
             "identifiers": {(DOMAIN, self._device_id)},
             "name": self._name,
             "manufacturer": "eQ-3 / MAX!",
-            "configuration_url": "https://github.com/powerpaul17/maxcul",
+            "configuration_url": "https://github.com/FredStich/CulMax",
         }
 
     async def async_added_to_hass(self) -> None:
@@ -230,7 +230,7 @@ class MaxPushButton(BinarySensorEntity):
             "name": self._name,
             "manufacturer": "eQ-3 / MAX!",
             "model": "Eco Taster",
-            "configuration_url": "https://github.com/powerpaul17/maxcul",
+            "configuration_url": "https://github.com/FredStich/CulMax",
         }
 
     async def async_added_to_hass(self) -> None:
@@ -253,6 +253,11 @@ class MaxPushButton(BinarySensorEntity):
     @property
     def unique_id(self) -> str:
         return f"{self._device_id}-push-button"
+
+    @property
+    def sender_id(self) -> int:
+        """Return the device RF address."""
+        return int(self._device_id)
 
     @property
     def should_poll(self) -> bool:
