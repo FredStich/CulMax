@@ -34,6 +34,7 @@ from . import (
     SIGNAL_THERMOSTAT_UPDATE,
     MaxCulConfigEntry,
     MaxCulConnection,
+    get_effective_device_type,
     register_paired_device,
 )
 from .max_shutter import MaxShutter
@@ -83,9 +84,12 @@ async def async_setup_entry(
     entities: list[BinarySensorEntity] = []
     for device_id, device in known_devices.items():
         entities.append(MaxBattery(connection, device_id, device[CONF_NAME]))
-        if _is_shutter_device_type(device[CONF_TYPE]):
+        device_type = get_effective_device_type(
+            config_entry, device_id, device[CONF_TYPE]
+        )
+        if _is_shutter_device_type(device_type):
             entities.append(MaxShutter(connection, device_id, device[CONF_NAME]))
-        elif _is_push_button_device_type(device[CONF_TYPE]):
+        elif _is_push_button_device_type(device_type):
             entities.append(MaxPushButton(connection, device_id, device[CONF_NAME]))
 
     async_add_entities(entities)
@@ -102,15 +106,18 @@ async def async_setup_entry(
         if device_id in added_device_ids:
             return
 
-        device_type = payload.get(ATTR_DEVICE_TYPE)
-        if not isinstance(device_type, str):
+        reported_type = payload.get(ATTR_DEVICE_TYPE)
+        if not isinstance(reported_type, str):
             return
         added_device_ids.add(device_id)
         device_name = payload.get(ATTR_DEVICE_SERIAL)
         if not isinstance(device_name, str) or not device_name:
-            device_name = _normalize_device_label(device_type)
+            device_name = _normalize_device_label(reported_type)
+        device_type = get_effective_device_type(
+            config_entry, device_id, reported_type
+        )
         register_paired_device(
-            hass, config_entry, device_id, device_name, device_type
+            hass, config_entry, device_id, device_name, reported_type
         )
         devices_to_add: list[BinarySensorEntity] = [
             MaxBattery(connection, device_id, device_name)

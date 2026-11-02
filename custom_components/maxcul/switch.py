@@ -27,6 +27,7 @@ from . import (
     SIGNAL_THERMOSTAT_UPDATE,
     MaxCulConfigEntry,
     MaxCulConnection,
+    get_effective_device_type,
     register_paired_device,
 )
 
@@ -54,7 +55,11 @@ async def async_setup_entry(
         [
             MaxPlugAdapter(connection, device_id, device[CONF_NAME])
             for device_id, device in known_devices.items()
-            if _is_plug_adapter(device.get(CONF_TYPE))
+            if _is_plug_adapter(
+                get_effective_device_type(
+                    config_entry, device_id, device.get(CONF_TYPE)
+                )
+            )
         ]
     )
 
@@ -62,12 +67,17 @@ async def async_setup_entry(
     def paired_callback(payload: dict[str, Any]) -> None:
         if payload.get(ATTR_CONNECTION_DEVICE_PATH) != device_path:
             return
-        device_type = payload.get(ATTR_DEVICE_TYPE)
+        reported_type = payload.get(ATTR_DEVICE_TYPE)
         device_id = payload.get(ATTR_DEVICE_ID)
-        if not _is_plug_adapter(device_type) or device_id is None:
+        if not isinstance(reported_type, str) or device_id is None:
             return
 
         device_id = str(device_id)
+        device_type = get_effective_device_type(
+            config_entry, device_id, reported_type
+        )
+        if not _is_plug_adapter(device_type):
+            return
         if device_id in added_device_ids:
             return
         added_device_ids.add(device_id)
@@ -75,7 +85,7 @@ async def async_setup_entry(
         name = payload.get(ATTR_DEVICE_SERIAL)
         if not isinstance(name, str) or not name:
             name = "Plug Adapter"
-        register_paired_device(hass, config_entry, device_id, name, device_type)
+        register_paired_device(hass, config_entry, device_id, name, reported_type)
         async_add_entities([MaxPlugAdapter(connection, device_id, name)])
 
     config_entry.async_on_unload(

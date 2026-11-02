@@ -10,6 +10,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.maxcul import (
     CONF_DEVICE_PATH,
+    CONF_DEVICE_TYPE_OVERRIDES,
     DOMAIN,
     MaxCulConnection,
 )
@@ -22,6 +23,7 @@ from custom_components.maxcul._vendor.pymaxcul._const import (
     ATTR_DEVICE_SERIAL,
     ATTR_DEVICE_TYPE,
     ATTR_VALVE_POSITION,
+    HEATING_THERMOSTAT,
     MODE_MANUAL,
     PLUG_ADAPTER,
 )
@@ -142,6 +144,39 @@ def test_pair_ping_decodes_plug_adapter_type() -> None:
         "selftest_result": 0,
         "device_serial": "",
     }
+
+
+async def test_device_type_override_routes_reported_thermostat_to_switch(
+    hass: HomeAssistant,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="misreported-plug",
+        data={
+            CONF_DEVICE_PATH: "/dev/tty0",
+            CONF_DEVICES: {
+                "12345": {
+                    CONF_NAME: "KEQ9010666",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                }
+            },
+        },
+        options={
+            CONF_DEVICE_TYPE_OVERRIDES: {"12345": PLUG_ADAPTER},
+        },
+    )
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    switch_entities = [
+        entity_id
+        for entity_id in hass.states.async_entity_ids("switch")
+        if entity_id.startswith("switch.")
+    ]
+    assert len(switch_entities) == 1
+    assert hass.states.get(switch_entities[0]).state == "unknown"
+    assert not hass.states.async_entity_ids("climate")
 
 
 @pytest.mark.parametrize(

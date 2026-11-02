@@ -44,9 +44,11 @@
     "step": {
       "init": {
         "title": "CUL radio settings",
-        "description": "Set the radio address used by this CUL. Leave the default unless you need a different address.",
+        "description": "Set the radio address used by this CUL and optionally override the detected type of a paired device.",
         "data": {
-          "sender_id": "CUL radio address (decimal; default 1193046)"
+          "sender_id": "CUL radio address (decimal; default 1193046)",
+          "override_device": "Paired device",
+          "override_type": "Device type override"
         }
       }
     }

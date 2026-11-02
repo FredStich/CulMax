@@ -76,8 +76,8 @@ paired devices.
 | MAX! heating thermostat | Climate entity with target temperature, mode, preset, and reported valve position |
 | MAX! wall thermostat | Climate entity |
 | MAX! shutter contact | Window binary sensor |
-| MAX! eco Taster | Binary sensor for its reported on/off state and battery status |
-| MAX! plug Adapter | Outlet switch with reported state and on/off control |
+| MAX! eco switch | Binary sensor for its reported on/off state and battery status |
+| MAX! plug adapter | Outlet switch with reported state and on/off control |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
 
@@ -442,7 +442,11 @@ data:
 
 The **CUL radio address** option defaults to `0x123456` (`1193046`, entered as
 decimal in the options form). Change it only when you need to assign a
-different 24-bit radio address to the CUL.
+different 24-bit radio address to the CUL. If a device announces a type that
+does not match its physical model, select it under **Paired device** and choose
+the correct **Device type override**. Saving the option reloads the integration
+and routes that device to the selected platform. Choose **Use type reported by
+device** to remove an override.
 
 ## Inspecting entities
 
@@ -495,6 +499,10 @@ pytest
   saved in its config entry. The CUL does not provide a complete device
   inventory, so the missing device must announce itself through pairing or
   repair again.
+- **A paired device appears on the wrong platform:** check its announced type in
+  the pairing log. If it differs from the physical model, use the per-device
+  type override in the integration options; the reported protocol type is kept
+  unchanged.
 - **Association does not complete:** check that both devices are paired to the
   same loaded CUL, call the service, then open or close the window to wake the
   contact. A low CUL send budget can delay transmissions or replies.

@@ -2,11 +2,71 @@ from __future__ import annotations
 
 import pytest
 
+from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.maxcul import (
+    CONF_DEVICE_PATH,
+    CONF_DEVICE_TYPE_OVERRIDES,
+    CONF_SENDER_ID,
+    DOMAIN,
+)
 from custom_components.maxcul import config_flow
-from custom_components.maxcul._vendor.pymaxcul._const import CUL_BAUDRATE
+from custom_components.maxcul._vendor.pymaxcul._const import (
+    CUL_BAUDRATE,
+    HEATING_THERMOSTAT,
+    PLUG_ADAPTER,
+)
 from custom_components.maxcul._vendor.pymaxcul._io import (
     is_cul_version_response,
 )
+
+
+async def test_options_flow_saves_and_clears_device_type_override(
+    hass: HomeAssistant,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_DEVICE_PATH: "/dev/tty0",
+            CONF_DEVICES: {
+                "12345": {
+                    CONF_NAME: "KEQ9010666",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                }
+            },
+        },
+    )
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    assert result["type"] == "form"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_SENDER_ID: 0x123456,
+            config_flow.CONF_OVERRIDE_DEVICE: "12345",
+            config_flow.CONF_OVERRIDE_TYPE: PLUG_ADAPTER,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert config_entry.options[CONF_DEVICE_TYPE_OVERRIDES] == {
+        "12345": PLUG_ADAPTER
+    }
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_SENDER_ID: 0x123456,
+            config_flow.CONF_OVERRIDE_DEVICE: "12345",
+            config_flow.CONF_OVERRIDE_TYPE: config_flow.USE_REPORTED_DEVICE_TYPE,
+        },
+    )
+    assert result["type"] == "create_entry"
+    assert config_entry.options[CONF_DEVICE_TYPE_OVERRIDES] == {}
 
 
 def test_serial_connection_probe_uses_cul_settings(

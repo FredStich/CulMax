@@ -5,6 +5,9 @@ import socket
 import pytest
 
 from custom_components.maxcul._vendor.pymaxcul import _communication, _io, _telnet
+from custom_components.maxcul._vendor.pymaxcul._messages import (
+    WallThermostatControlMessage,
+)
 
 
 class FakeSocket:
@@ -107,3 +110,19 @@ def test_paired_devices_use_unique_membership_entries() -> None:
     connection.add_paired_device(456)
 
     assert connection._paired_devices == {123, 456}
+
+
+def test_wall_thermostat_control_message_is_acknowledged() -> None:
+    device_id = 0x6A285
+    connection = _communication.MaxConnection(paired_devices=[device_id])
+    acknowledgements = []
+    connection._send_ack = acknowledgements.append
+    message = WallThermostatControlMessage(
+        sender_id=device_id,
+        desired_temperature=4.5,
+        temperature=23.4,
+    )
+
+    connection._handle_message(message, 242)
+
+    assert acknowledgements == [message]

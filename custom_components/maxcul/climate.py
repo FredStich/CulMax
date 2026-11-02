@@ -24,6 +24,7 @@ from . import (
     SIGNAL_WEEK_PROFILE_UPDATE,
     CONF_WEEK_PROFILES,
     MaxCulConfigEntry,
+    get_effective_device_type,
     register_paired_device,
 )
 from .max_thermostat import MaxThermostat
@@ -99,7 +100,9 @@ async def async_setup_entry(
     async_add_entities(
         [
             _create_thermostat_entity(
-                device[CONF_TYPE],
+                get_effective_device_type(
+                    config_entry, device_id, device[CONF_TYPE]
+                ),
                 connection,
                 device_id,
                 device[CONF_NAME],
@@ -107,7 +110,11 @@ async def async_setup_entry(
                 profile_states.get(device_id),
             )
             for device_id, device in known_devices.items()
-            if _is_thermostat_device_type(device[CONF_TYPE])
+            if _is_thermostat_device_type(
+                get_effective_device_type(
+                    config_entry, device_id, device[CONF_TYPE]
+                )
+            )
         ]
     )
 
@@ -116,14 +123,16 @@ async def async_setup_entry(
         if payload.get(ATTR_CONNECTION_DEVICE_PATH) != device_path:
             return
 
-        device_type = payload.get(ATTR_DEVICE_TYPE)
-        if not _is_thermostat_device_type(device_type):
-            return
-
         raw_device_id = payload.get(ATTR_DEVICE_ID)
-        if raw_device_id is None:
+        reported_type = payload.get(ATTR_DEVICE_TYPE)
+        if raw_device_id is None or not isinstance(reported_type, str):
             return
         device_id = str(raw_device_id)
+        device_type = get_effective_device_type(
+            config_entry, device_id, reported_type
+        )
+        if not _is_thermostat_device_type(device_type):
+            return
         if device_id in added_device_ids:
             return
         added_device_ids.add(device_id)
@@ -132,7 +141,7 @@ async def async_setup_entry(
         if not isinstance(device_name, str) or not device_name:
             device_name = _normalize_device_label(device_type)
         register_paired_device(
-            hass, config_entry, device_id, device_name, device_type
+            hass, config_entry, device_id, device_name, reported_type
         )
 
         async_add_entities(

@@ -11,19 +11,39 @@ import serial.tools.list_ports
 import voluptuous as vol
 from homeassistant.components import usb
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
-from homeassistant.const import CONF_DEVICES, CONF_HOST, CONF_PORT
+from homeassistant.const import (
+    CONF_DEVICES,
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    CONF_TYPE,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 from serial import Serial, SerialException
 
 from . import (
     CONF_DEVICE_PATH,
+    CONF_DEVICE_TYPE_OVERRIDES,
     CONF_SENDER_ID,
     DOMAIN,
     normalize_device_path,
 )
-from ._vendor.pymaxcul._const import CUL_BAUDRATE
+from ._vendor.pymaxcul._const import (
+    CUL_BAUDRATE,
+    HEATING_THERMOSTAT,
+    HEATING_THERMOSTAT_PLUS,
+    PLUG_ADAPTER,
+    PUSH_BUTTON,
+    SHUTTER_CONTACT,
+    WALL_MOUNTED_THERMOSTAT,
+)
 from ._vendor.pymaxcul._io import (
     is_cul_version_response,
     is_serial_port_in_use,
@@ -34,6 +54,20 @@ LOGGER = logging.getLogger(__name__)
 
 CONF_MANUAL_PATH = "Enter manually"
 CONF_DEVICE_TYPE = "device_type"
+CONF_OVERRIDE_DEVICE = "override_device"
+CONF_OVERRIDE_TYPE = "override_type"
+NO_OVERRIDE_DEVICE = "__no_device__"
+KEEP_DEVICE_TYPE = "__keep__"
+USE_REPORTED_DEVICE_TYPE = "__reported__"
+
+_OVERRIDE_DEVICE_TYPES = (
+    HEATING_THERMOSTAT,
+    HEATING_THERMOSTAT_PLUS,
+    WALL_MOUNTED_THERMOSTAT,
+    SHUTTER_CONTACT,
+    PUSH_BUTTON,
+    PLUG_ADAPTER,
+)
 
 
 class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -245,7 +279,7 @@ def _get_cul_version(connection: Serial | TelnetSerial) -> bool:
 
 
 class MaxculOptionsFlowHandler(OptionsFlow):
-    """Allow configuring the MaxCUL sender ID."""
+    """Allow configuring the radio address and paired-device type overrides."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
@@ -253,19 +287,96 @@ class MaxculOptionsFlowHandler(OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show or save the sender ID."""
+        """Show or save radio settings and one paired-device type override."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            options = dict(self._config_entry.options)
+            options[CONF_SENDER_ID] = user_input[CONF_SENDER_ID]
+
+            overrides = options.get(CONF_DEVICE_TYPE_OVERRIDES)
+            if not isinstance(overrides, dict):
+                overrides = {}
+            else:
+                overrides = dict(overrides)
+
+            device_id = user_input.get(CONF_OVERRIDE_DEVICE, NO_OVERRIDE_DEVICE)
+            device_type = user_input.get(CONF_OVERRIDE_TYPE, KEEP_DEVICE_TYPE)
+            if (
+                device_id != NO_OVERRIDE_DEVICE
+                and device_type != KEEP_DEVICE_TYPE
+            ):
+                if device_type == USE_REPORTED_DEVICE_TYPE:
+                    overrides.pop(device_id, None)
+                elif device_type in _OVERRIDE_DEVICE_TYPES:
+                    overrides[device_id] = device_type
+
+            options[CONF_DEVICE_TYPE_OVERRIDES] = overrides
+            return self.async_create_entry(title="", data=options)
 
         sender_id = self._config_entry.options.get(CONF_SENDER_ID)
         if sender_id is None:
             sender_id = 0x123456
 
-        schema = vol.Schema(
-            {
-                vol.Optional(CONF_SENDER_ID, default=sender_id): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=0xFFFFFF)
-                )
-            }
+        schema_fields: dict[Any, Any] = {
+            vol.Optional(CONF_SENDER_ID, default=sender_id): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=0xFFFFFF)
+            )
+        }
+
+        known_devices = self._config_entry.data.get(CONF_DEVICES) or {}
+        device_options = [
+            {"value": NO_OVERRIDE_DEVICE, "label": "Do not change an override"}
+        ]
+        existing_overrides = self._config_entry.options.get(
+            CONF_DEVICE_TYPE_OVERRIDES, {}
         )
+        for device_id, device in known_devices.items():
+            if not isinstance(device, dict):
+                continue
+            name = device.get(CONF_NAME, "MAX! device")
+            reported_type = device.get(CONF_TYPE, "unknown type")
+            override = (
+                existing_overrides.get(str(device_id))
+                if isinstance(existing_overrides, dict)
+                else None
+            )
+            type_label = (
+                f"override: {override}" if override else f"reported: {reported_type}"
+            )
+            device_options.append(
+                {
+                    "value": str(device_id),
+                    "label": f"{name} ({device_id}) - {type_label}",
+                }
+            )
+
+        if len(device_options) > 1:
+            schema_fields[
+                vol.Optional(
+                    CONF_OVERRIDE_DEVICE, default=NO_OVERRIDE_DEVICE
+                )
+            ] = SelectSelector(
+                SelectSelectorConfig(
+                    options=device_options, mode=SelectSelectorMode.DROPDOWN
+                )
+            )
+            type_options = [
+                {"value": KEEP_DEVICE_TYPE, "label": "Keep current override"},
+                {
+                    "value": USE_REPORTED_DEVICE_TYPE,
+                    "label": "Use type reported by device",
+                },
+                *[
+                    {"value": device_type, "label": device_type}
+                    for device_type in _OVERRIDE_DEVICE_TYPES
+                ],
+            ]
+            schema_fields[
+                vol.Optional(CONF_OVERRIDE_TYPE, default=KEEP_DEVICE_TYPE)
+            ] = SelectSelector(
+                SelectSelectorConfig(
+                    options=type_options, mode=SelectSelectorMode.DROPDOWN
+                )
+            )
+
+        schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="init", data_schema=schema)

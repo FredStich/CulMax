@@ -72,6 +72,7 @@ CONNECTION_STARTUP_TIMEOUT = 20
 
 CONF_DEVICE_PATH = "device_path"
 CONF_SENDER_ID = "sender_id"
+CONF_DEVICE_TYPE_OVERRIDES = "device_type_overrides"
 
 SERVICE_ENABLE_PAIRING = "enable_pairing"
 SERVICE_CONF_DEVICE_PATH = "device_path"
@@ -212,6 +213,20 @@ def register_paired_device(
     )
 
 
+def get_effective_device_type(
+    config_entry: MaxCulConfigEntry, device_id: str | int, reported_type: Any
+) -> Any:
+    """Return a configured type override, falling back to the radio report."""
+    overrides = config_entry.options.get(CONF_DEVICE_TYPE_OVERRIDES)
+    if not isinstance(overrides, dict):
+        return reported_type
+
+    override = overrides.get(str(device_id))
+    if isinstance(override, str) and override in DEVICE_TYPES_BY_NAME:
+        return override
+    return reported_type
+
+
 def _store_week_profile_state(
     hass: HomeAssistant,
     config_entry: MaxCulConfigEntry,
@@ -327,7 +342,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
             for device_id, device in candidates:
                 matching_device_found = True
-                device_type = device.get(CONF_TYPE)
+                device_type = get_effective_device_type(
+                    entry, device_id, device.get(CONF_TYPE)
+                )
                 if not (
                     isinstance(device_type, str)
                     and "THERMOSTAT" in device_type.upper()
@@ -462,13 +479,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
             for thermostat_id, thermostat in thermostats:
                 thermostat_protocol_type = _association_thermostat_type(
-                    thermostat.get(CONF_TYPE)
+                    get_effective_device_type(
+                        entry, thermostat_id, thermostat.get(CONF_TYPE)
+                    )
                 )
                 if thermostat_protocol_type is None:
                     unsupported_thermostat = True
                     continue
                 for window_contact_id, window_contact in window_contacts:
-                    if not _is_window_contact_type(window_contact.get(CONF_TYPE)):
+                    if not _is_window_contact_type(
+                        get_effective_device_type(
+                            entry,
+                            window_contact_id,
+                            window_contact.get(CONF_TYPE),
+                        )
+                    ):
                         unsupported_window_contact = True
                         continue
                     try:
@@ -597,6 +622,9 @@ async def async_setup_entry(
     hass: HomeAssistant, config_entry: MaxCulConfigEntry
 ) -> bool:
     """Set up MaxCUL from a config entry."""
+    config_entry.async_on_unload(
+        config_entry.add_update_listener(_async_options_updated)
+    )
     device_path: str = config_entry.data[CONF_DEVICE_PATH]
     sender_id = config_entry.options.get(CONF_SENDER_ID)
 
@@ -647,6 +675,13 @@ async def async_setup_entry(
 
     connection.mark_setup_complete()
     return True
+
+
+async def _async_options_updated(
+    hass: HomeAssistant, config_entry: MaxCulConfigEntry
+) -> None:
+    """Reload entities when radio or device-type options change."""
+    await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_unload_entry(
