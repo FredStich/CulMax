@@ -1,16 +1,21 @@
 enable_pairing:
-  name: Enable device pairing
-  description: Open the pairing window on a CulMax connection so nearby MAX! devices can be paired.
+  name: Add a MAX! device
+  description: >-
+    Start pairing first, then put only the device you want to add into pairing
+    mode using its button or instructions. Nearby MAX! devices may also pair
+    during this time. If you have one CUL, leave the connection field empty.
   fields:
     device_path:
-      name: CUL connection
-      description: Optional. Required only when multiple CUL connections are loaded.
+      name: Which CUL should listen?
+      description: >-
+        Leave empty if you have one CUL. If you have more than one, enter the
+        same path or network address used when setting up the CUL.
       example: "telnet://192.168.1.10:2323"
       selector:
         text:
     duration:
-      name: Pairing duration
-      description: Number of seconds to allow pairing (1 to 300 seconds).
+      name: How long should pairing stay open?
+      description: The default is 30 seconds. Start pairing, then press the pairing button on your MAX! device during this time.
       default: 30
       selector:
         number:
@@ -20,12 +25,14 @@ enable_pairing:
           unit_of_measurement: seconds
 
 set_week_profile:
-  name: Set thermostat week profile
-  description: Write a complete weekly heating schedule directly to a MAX! thermostat.
+  name: Set a thermostat's weekly schedule
+  description: >-
+    Send a complete seven-day heating schedule to a thermostat. This is an
+    advanced setting. The schedule replaces the thermostat's current schedule.
   fields:
     device_id:
       name: Thermostat
-      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Choose the thermostat whose schedule you want to replace.
       selector:
         entity:
           filter:
@@ -33,17 +40,21 @@ set_week_profile:
             device:
               integration: maxcul
     device_path:
-      name: CUL connection
-      description: Optional connection path to disambiguate identical device IDs.
+      name: CUL connection (optional)
+      description: >-
+        Only fill this in if the same thermostat is connected through more than
+        one CUL.
       example: "/dev/ttyUSB0"
       selector:
         text:
     week_profile:
-      name: Weekly schedule
+      name: Heating schedule for all seven days
       description: >-
-        One line for each day, using a day name and alternating temperatures
-        and switch times. Temperatures are 4.5–30.5 °C in 0.5 °C steps;
-        times are in 5-minute increments.
+        Enter one line for each day. Each line starts with the day name, then
+        alternates between a temperature and the time when the next temperature
+        begins. Use temperatures from 4.5 to 30.5 °C in 0.5 °C steps and times
+        in 5-minute steps. The example keeps 21 °C until 06:00, then 17 °C
+        until 22:00, then 16 °C for the night.
       example: |-
         Mon 21,06:00,17,22:00,16
         Tue 21,06:00,17,22:00,16
@@ -57,16 +68,16 @@ set_week_profile:
           multiline: true
 
 associate:
-  name: Associate thermostat and window contact
+  name: Link a thermostat to a window contact
   description: >-
-    Create a bidirectional MAX! link between a heating thermostat and a window
-    contact. After calling this service, open or close the window to trigger
-    the contact's reed relay and wake it. Do not press the pairing button on
-    the back of the contact.
+    Make the thermostat lower its temperature when this window is open. Choose
+    the thermostat and its window contact, then call this service. Afterward,
+    open or close the window once so the contact wakes up. Do not press the
+    pairing button on the back of the contact.
   fields:
     thermostat_id:
       name: Thermostat
-      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Choose the thermostat in the room with this window.
       selector:
         entity:
           filter:
@@ -74,8 +85,8 @@ associate:
             device:
               integration: maxcul
     window_contact_id:
-      name: Window contact
-      description: Select a CulMax window contact. Automations may also use its friendly name or hexadecimal address.
+      name: Window or door contact
+      description: Choose the contact mounted on the window or door.
       selector:
         entity:
           filter:
@@ -84,21 +95,25 @@ associate:
             device:
               integration: maxcul
     device_path:
-      name: CUL connection
-      description: Optional path to disambiguate devices paired to multiple CULs.
+      name: CUL connection (optional)
+      description: >-
+        Only fill this in if these devices are connected through more than one
+        CUL.
       example: "/dev/ttyUSB0"
       selector:
         text:
 
 deassociate:
-  name: Remove thermostat and window contact association
+  name: Unlink a thermostat and window contact
   description: >-
-    Remove the bidirectional MAX! link between a thermostat and window contact.
-    Open or close the window to trigger the contact's reed relay and wake it.
+    Stop this window contact from changing the thermostat's temperature.
+    Choose the thermostat and contact that are currently linked. If the change
+    does not take effect immediately, open or close the window once to wake the
+    contact.
   fields:
     thermostat_id:
       name: Thermostat
-      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Choose the thermostat that is currently linked to the contact.
       selector:
         entity:
           filter:
@@ -106,8 +121,8 @@ deassociate:
             device:
               integration: maxcul
     window_contact_id:
-      name: Window contact
-      description: Select a CulMax window contact. Automations may also use its friendly name or hexadecimal address.
+      name: Window or door contact
+      description: Choose the contact that is currently linked to the thermostat.
       selector:
         entity:
           filter:
@@ -116,8 +131,10 @@ deassociate:
             device:
               integration: maxcul
     device_path:
-      name: CUL connection
-      description: Optional path to disambiguate devices paired to multiple CULs.
+      name: CUL connection (optional)
+      description: >-
+        Only fill this in if these devices are connected through more than one
+        CUL.
       example: "/dev/ttyUSB0"
       selector:
         text:

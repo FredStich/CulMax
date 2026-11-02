@@ -56,8 +56,6 @@ CONF_MANUAL_PATH = "Enter manually"
 CONF_DEVICE_TYPE = "device_type"
 CONF_OVERRIDE_DEVICE = "override_device"
 CONF_OVERRIDE_TYPE = "override_type"
-NO_OVERRIDE_DEVICE = "__no_device__"
-KEEP_DEVICE_TYPE = "__keep__"
 USE_REPORTED_DEVICE_TYPE = "__reported__"
 
 _OVERRIDE_DEVICE_TYPES = (
@@ -94,7 +92,15 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_pick_host()
 
         schema = vol.Schema(
-            {vol.Required(CONF_DEVICE_TYPE): vol.In(["serial port", "network"])}
+            {
+                vol.Required(CONF_DEVICE_TYPE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=["serial port", "network"],
+                        translation_key="connection_type",
+                        mode=SelectSelectorMode.LIST,
+                    )
+                )
+            }
         )
         return self.async_show_form(step_id="user", data_schema=schema)
 
@@ -102,18 +108,18 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Select a serial device."""
-        port_labels = []
+        port_options = []
         for port in self._com_ports:
             label = f"{port.description or port.device} ({port.device})"
             label += f", s/n: {port.serial_number or 'n/a'}"
             if port.manufacturer:
                 label += f" - {port.manufacturer}"
-            port_labels.append(label)
+            port_options.append({"value": port.device, "label": label})
 
-        if not port_labels:
+        if not port_options:
             return await self.async_step_manual_device_path()
 
-        port_labels.append(CONF_MANUAL_PATH)
+        port_options.append(CONF_MANUAL_PATH)
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -121,23 +127,37 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
             if user_selection == CONF_MANUAL_PATH:
                 return await self.async_step_manual_device_path()
 
-            port = self._com_ports[port_labels.index(user_selection)]
             device_path = await self.hass.async_add_executor_job(
-                usb.get_serial_by_id, port.device
+                usb.get_serial_by_id, user_selection
             )
-            device_path = device_path or port.device
+            device_path = device_path or user_selection
 
             connection_error = await test_connection(self.hass, device_path)
             if connection_error is None:
-                title = port.description or port.device
-                title += f" (s/n: {port.serial_number or 'n/a'})"
-                if port.manufacturer:
-                    title += f" - {port.manufacturer}"
+                selected_port = next(
+                    port
+                    for port in self._com_ports
+                    if port.device == user_selection
+                )
+                title = selected_port.description or selected_port.device
+                title += f" (s/n: {selected_port.serial_number or 'n/a'})"
+                if selected_port.manufacturer:
+                    title += f" - {selected_port.manufacturer}"
                 return await self._async_create_entry(device_path, title)
 
             errors["base"] = connection_error
 
-        schema = vol.Schema({vol.Required(CONF_DEVICE_PATH): vol.In(port_labels)})
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_DEVICE_PATH): SelectSelector(
+                    SelectSelectorConfig(
+                        options=port_options,
+                        translation_key="serial_device",
+                        mode=SelectSelectorMode.LIST,
+                    )
+                )
+            }
+        )
         return self.async_show_form(
             step_id="device_picker", data_schema=schema, errors=errors
         )
@@ -283,100 +303,122 @@ class MaxculOptionsFlowHandler(OptionsFlow):
 
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
+        self._selected_device_id: str | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show or save radio settings and one paired-device type override."""
+        """Ask which setting the user wants to change."""
+        known_devices = self._config_entry.data.get(CONF_DEVICES) or {}
+        if not known_devices:
+            return await self.async_step_radio_settings()
+
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["radio_settings", "override_device"],
+        )
+
+    async def async_step_radio_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Change the CUL radio address."""
         if user_input is not None:
             options = dict(self._config_entry.options)
             options[CONF_SENDER_ID] = user_input[CONF_SENDER_ID]
-
-            overrides = options.get(CONF_DEVICE_TYPE_OVERRIDES)
-            if not isinstance(overrides, dict):
-                overrides = {}
-            else:
-                overrides = dict(overrides)
-
-            device_id = user_input.get(CONF_OVERRIDE_DEVICE, NO_OVERRIDE_DEVICE)
-            device_type = user_input.get(CONF_OVERRIDE_TYPE, KEEP_DEVICE_TYPE)
-            if (
-                device_id != NO_OVERRIDE_DEVICE
-                and device_type != KEEP_DEVICE_TYPE
-            ):
-                if device_type == USE_REPORTED_DEVICE_TYPE:
-                    overrides.pop(device_id, None)
-                elif device_type in _OVERRIDE_DEVICE_TYPES:
-                    overrides[device_id] = device_type
-
-            options[CONF_DEVICE_TYPE_OVERRIDES] = overrides
             return self.async_create_entry(title="", data=options)
 
         sender_id = self._config_entry.options.get(CONF_SENDER_ID)
         if sender_id is None:
             sender_id = 0x123456
 
-        schema_fields: dict[Any, Any] = {
-            vol.Optional(CONF_SENDER_ID, default=sender_id): vol.All(
-                vol.Coerce(int), vol.Range(min=0, max=0xFFFFFF)
-            )
-        }
-
-        known_devices = self._config_entry.data.get(CONF_DEVICES) or {}
-        device_options = [
-            {"value": NO_OVERRIDE_DEVICE, "label": "Do not change an override"}
-        ]
-        existing_overrides = self._config_entry.options.get(
-            CONF_DEVICE_TYPE_OVERRIDES, {}
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_SENDER_ID, default=sender_id): vol.All(
+                    vol.Coerce(int), vol.Range(min=0, max=0xFFFFFF)
+                )
+            }
         )
+        return self.async_show_form(
+            step_id="radio_settings", data_schema=schema
+        )
+
+    async def async_step_override_device(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Select the paired device whose type needs correcting."""
+        known_devices = self._config_entry.data.get(CONF_DEVICES) or {}
+        device_options = []
         for device_id, device in known_devices.items():
             if not isinstance(device, dict):
                 continue
             name = device.get(CONF_NAME, "MAX! device")
-            reported_type = device.get(CONF_TYPE, "unknown type")
-            override = (
-                existing_overrides.get(str(device_id))
-                if isinstance(existing_overrides, dict)
-                else None
-            )
-            type_label = (
-                f"override: {override}" if override else f"reported: {reported_type}"
-            )
             device_options.append(
                 {
                     "value": str(device_id),
-                    "label": f"{name} ({device_id}) - {type_label}",
+                    "label": f"{name} ({device_id})",
                 }
             )
 
-        if len(device_options) > 1:
-            schema_fields[
-                vol.Optional(
-                    CONF_OVERRIDE_DEVICE, default=NO_OVERRIDE_DEVICE
-                )
-            ] = SelectSelector(
-                SelectSelectorConfig(
-                    options=device_options, mode=SelectSelectorMode.DROPDOWN
-                )
-            )
-            type_options = [
-                {"value": KEEP_DEVICE_TYPE, "label": "Keep current override"},
-                {
-                    "value": USE_REPORTED_DEVICE_TYPE,
-                    "label": "Use type reported by device",
-                },
-                *[
-                    {"value": device_type, "label": device_type}
-                    for device_type in _OVERRIDE_DEVICE_TYPES
-                ],
-            ]
-            schema_fields[
-                vol.Optional(CONF_OVERRIDE_TYPE, default=KEEP_DEVICE_TYPE)
-            ] = SelectSelector(
-                SelectSelectorConfig(
-                    options=type_options, mode=SelectSelectorMode.DROPDOWN
-                )
-            )
+        if user_input is not None:
+            self._selected_device_id = user_input[CONF_OVERRIDE_DEVICE]
+            return await self.async_step_override_type()
 
-        schema = vol.Schema(schema_fields)
-        return self.async_show_form(step_id="init", data_schema=schema)
+        if not device_options:
+            return self.async_abort(reason="no_paired_devices")
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_OVERRIDE_DEVICE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=device_options, mode=SelectSelectorMode.LIST
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="override_device", data_schema=schema
+        )
+
+    async def async_step_override_type(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Set or remove the selected device's type override."""
+        device_id = self._selected_device_id
+        if device_id is None:
+            return await self.async_step_override_device()
+
+        if user_input is not None:
+            options = dict(self._config_entry.options)
+            overrides = options.get(CONF_DEVICE_TYPE_OVERRIDES)
+            overrides = dict(overrides) if isinstance(overrides, dict) else {}
+            device_type = user_input[CONF_OVERRIDE_TYPE]
+            if device_type == USE_REPORTED_DEVICE_TYPE:
+                overrides.pop(device_id, None)
+            else:
+                overrides[device_id] = device_type
+            options[CONF_DEVICE_TYPE_OVERRIDES] = overrides
+            return self.async_create_entry(title="", data=options)
+
+        known_devices = self._config_entry.data.get(CONF_DEVICES) or {}
+        device = known_devices.get(device_id, {})
+        reported_type = (
+            device.get(CONF_TYPE) if isinstance(device, dict) else None
+        )
+        type_options = list(_OVERRIDE_DEVICE_TYPES)
+        if isinstance(reported_type, str):
+            type_options.append(USE_REPORTED_DEVICE_TYPE)
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_OVERRIDE_TYPE): SelectSelector(
+                    SelectSelectorConfig(
+                        options=type_options,
+                        translation_key="device_type_override",
+                        mode=SelectSelectorMode.LIST,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="override_type", data_schema=schema
+        )

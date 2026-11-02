@@ -1,0 +1,199 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MAX! CUL verbinden",
+        "description": "Wählen Sie zuerst, wie der CUL angeschlossen ist. Wählen Sie die direkte Verbindung, wenn er am Home-Assistant-Server steckt. Wählen Sie Netzwerk, wenn er an einem anderen Gerät angeschlossen ist und eine Telnet-Verbindung anbietet.",
+        "data": {
+          "device_type": "Wie ist Ihr CUL angeschlossen?"
+        }
+      },
+      "device_picker": {
+        "title": "CUL auswählen",
+        "description": "Wählen Sie den Eintrag aus, der zu Ihrem CUL passt. Gerätename, USB-Pfad und Seriennummer helfen bei der Zuordnung. Wenn Sie unsicher sind, prüfen Sie das Etikett am CUL oder wählen Sie die manuelle Eingabe.",
+        "data": {
+          "device_path": "CUL-Gerät"
+        },
+        "data_description": {
+          "device_path": "Wählen Sie den CUL und kein anderes USB-Gerät. Wenn kein Eintrag passt, wählen Sie die manuelle Eingabe."
+        }
+      },
+      "manual_device_path": {
+        "title": "CUL-Adresse eingeben",
+        "description": "Geben Sie den von Home Assistant angezeigten Gerätepfad ein, zum Beispiel /dev/serial/by-id/usb-ihr-geraet. Ist der CUL an einem anderen Computer angeschlossen, gehen Sie zurück und wählen Sie Netzwerk.",
+        "data": {
+          "device_path": "CUL-Gerätepfad"
+        },
+        "data_description": {
+          "device_path": "Falls vorhanden, verwenden Sie den stabilen Pfad mit /dev/serial/by-id statt /dev/ttyACM0."
+        }
+      },
+      "pick_host": {
+        "title": "CUL über das Netzwerk verbinden",
+        "description": "Geben Sie den Namen oder die IP-Adresse des Computers oder Geräts ein, an dem der CUL angeschlossen ist. Gemeint ist ein CUL-Telnet-Server, nicht die Home-Assistant-Adresse. Der übliche Port ist 2323.",
+        "data": {
+          "host": "Name oder IP-Adresse des CUL-Servers",
+          "port": "Port (normalerweise 2323)"
+        },
+        "data_description": {
+          "host": "Beispiel: 192.168.1.10",
+          "port": "Lassen Sie 2323 stehen, außer Ihr CUL-Server verwendet einen anderen Port."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect_to_device": "Home Assistant kann diese Adresse nicht öffnen. Prüfen Sie, ob der CUL eingeschaltet ist, die Adresse stimmt und Home Assistant darauf zugreifen darf.",
+      "cul_in_use": "Ein anderes Programm oder Home-Assistant-Add-on verwendet diesen CUL. Beenden Sie das Programm oder Add-on und versuchen Sie es erneut. Ein serieller CUL kann immer nur von einem Programm verwendet werden.",
+      "cul_no_response": "Der CUL wurde geöffnet, hat aber nicht geantwortet. Prüfen Sie Stromversorgung und USB- oder Netzwerkverbindung. Falls ein anderes Programm oder Add-on den CUL verwendet, beenden Sie es und versuchen Sie es erneut."
+    },
+    "abort": {
+      "already_configured": "Dieser CUL ist bereits in Home Assistant eingerichtet.",
+      "no_paired_devices": "Es sind noch keine Geräte gespeichert. Koppeln Sie zuerst ein MAX!-Gerät und öffnen Sie danach die CulMax-Optionen erneut."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CulMax-Einstellungen",
+        "description": "Wählen Sie eine Einstellung. Die CUL-Funkadresse muss normalerweise nicht geändert werden. Korrigieren Sie den Gerätetyp nur, wenn ein Gerät als falscher Gerätetyp angezeigt wird.",
+        "menu_options": {
+          "radio_settings": "CUL-Funkadresse ändern",
+          "override_device": "Falschen Gerätetyp korrigieren"
+        }
+      },
+      "radio_settings": {
+        "title": "CUL-Funkadresse",
+        "description": "Diese Funkadresse verwendet Home Assistant für den CUL. Lassen Sie den vorgeschlagenen Wert unverändert, sofern Sie nicht wissen, dass eine andere Adresse nötig ist.",
+        "data": {
+          "sender_id": "Funkadresse"
+        },
+        "data_description": {
+          "sender_id": "Erweiterte Einstellung: 1193046 entspricht der Adresse 0x123456. Lassen Sie den vorgeschlagenen Wert unverändert, wenn Sie keinen bestimmten Grund zur Änderung haben."
+        }
+      },
+      "override_device": {
+        "title": "Gerät auswählen",
+        "description": "Wählen Sie das MAX!-Gerät, das in Home Assistant falsch angezeigt wird. Name und Geräteadresse helfen dabei, das richtige Gerät zu finden.",
+        "data": {
+          "override_device": "Gerät"
+        }
+      },
+      "override_type": {
+        "title": "Tatsächlichen Gerätetyp auswählen",
+        "description": "Wählen Sie das Gerät, das Sie in der Hand haben. Wenn der Plug Adapter zum Beispiel als Thermostat erscheint, wählen Sie Plug Adapter. Die Korrektur gilt nur für dieses Gerät. Zum Rückgängigmachen wählen Sie den automatisch erkannten Gerätetyp.",
+        "data": {
+          "override_type": "Tatsächlicher Gerätetyp"
+        }
+      }
+    }
+  },
+  "selector": {
+    "connection_type": {
+      "options": {
+        "serial port": "Direkt am Home-Assistant-Server angeschlossen",
+        "network": "An einem anderen Gerät angeschlossen (Netzwerk/Telnet)"
+      }
+    },
+    "serial_device": {
+      "options": {
+        "Enter manually": "Mein CUL wird nicht angezeigt – Pfad manuell eingeben"
+      }
+    },
+    "device_type_override": {
+      "options": {
+        "HeatingThermostat": "Heizkörperthermostat",
+        "HeatingThermostatPlus": "Heizkörperthermostat Plus",
+        "WallMountedThermostat": "Wandthermostat",
+        "ShutterContact": "Fensterkontakt",
+        "PushButton": "Eco-Taster",
+        "PlugAdapter": "Plug Adapter (Steckdosenschalter)",
+        "__reported__": "Automatisch erkannten Gerätetyp verwenden"
+      }
+    }
+  },
+  "services": {
+    "enable_pairing": {
+      "name": "MAX!-Gerät hinzufügen",
+      "description": "Starten Sie zuerst diesen Vorgang und versetzen Sie dann nur das gewünschte Gerät nach dessen Anleitung in den Anlernmodus. Währenddessen könnten auch andere Geräte in der Nähe gekoppelt werden. Bei nur einem CUL kann das Verbindungsfeld leer bleiben.",
+      "fields": {
+        "device_path": {
+          "name": "Welcher CUL soll lauschen?",
+          "description": "Bei nur einem CUL leer lassen. Bei mehreren CULs den gleichen Pfad oder die gleiche Netzwerkadresse wie bei der Einrichtung eingeben."
+        },
+        "duration": {
+          "name": "Wie lange soll der Anlernmodus geöffnet bleiben?",
+          "description": "Voreinstellung: 30 Sekunden. Starten Sie den Vorgang und drücken Sie währenddessen die Anlerntaste am MAX!-Gerät."
+        }
+      }
+    },
+    "set_week_profile": {
+      "name": "Wochenplan des Thermostats einstellen",
+      "description": "Sendet einen vollständigen Heizplan für sieben Tage an ein Thermostat. Dies ist eine erweiterte Einstellung. Der neue Plan ersetzt den bisherigen Plan des Thermostats.",
+      "fields": {
+        "device_id": {
+          "name": "Thermostat",
+          "description": "Wählen Sie das Thermostat, dessen Wochenplan ersetzt werden soll."
+        },
+        "device_path": {
+          "name": "CUL-Verbindung (optional)",
+          "description": "Nur ausfüllen, wenn dasselbe Thermostat über mehrere CULs verbunden ist."
+        },
+        "week_profile": {
+          "name": "Heizplan für alle sieben Tage",
+          "description": "Eine Zeile pro Wochentag. Nach dem Tagesnamen folgen abwechselnd Temperatur und Uhrzeit, zu der die nächste Temperatur beginnt. Temperaturen: 4,5 bis 30,5 °C in 0,5-Grad-Schritten; Uhrzeiten in 5-Minuten-Schritten. Das Beispiel hält bis 06:00 Uhr 21 °C, danach bis 22:00 Uhr 17 °C und nachts 16 °C."
+        }
+      }
+    },
+    "associate": {
+      "name": "Thermostat mit Fensterkontakt verbinden",
+      "description": "Das Thermostat senkt die Temperatur, wenn dieses Fenster geöffnet ist. Wählen Sie Thermostat und Fensterkontakt und starten Sie den Vorgang. Öffnen oder schließen Sie danach das Fenster einmal, damit der Kontakt aufwacht. Drücken Sie nicht die Anlerntaste auf der Rückseite des Kontakts.",
+      "fields": {
+        "thermostat_id": {
+          "name": "Thermostat",
+          "description": "Wählen Sie das Thermostat im Raum dieses Fensters."
+        },
+        "window_contact_id": {
+          "name": "Fenster- oder Türkontakt",
+          "description": "Wählen Sie den Kontakt an diesem Fenster oder dieser Tür."
+        },
+        "device_path": {
+          "name": "CUL-Verbindung (optional)",
+          "description": "Nur ausfüllen, wenn die Geräte über mehrere CULs verbunden sind."
+        }
+      }
+    },
+    "deassociate": {
+      "name": "Thermostat und Fensterkontakt trennen",
+      "description": "Der Fensterkontakt soll die Temperatur des Thermostats nicht mehr ändern. Wählen Sie das bisher verbundene Thermostat und den Kontakt. Falls die Änderung nicht sofort greift, öffnen oder schließen Sie das Fenster einmal, damit der Kontakt aufwacht.",
+      "fields": {
+        "thermostat_id": {
+          "name": "Thermostat",
+          "description": "Wählen Sie das Thermostat, das derzeit mit dem Kontakt verbunden ist."
+        },
+        "window_contact_id": {
+          "name": "Fenster- oder Türkontakt",
+          "description": "Wählen Sie den Kontakt, der derzeit mit dem Thermostat verbunden ist."
+        },
+        "device_path": {
+          "name": "CUL-Verbindung (optional)",
+          "description": "Nur ausfüllen, wenn die Geräte über mehrere CULs verbunden sind."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "battery": {
+        "name": "Batterie"
+      },
+      "push_button_state": {
+        "name": "Schaltzustand"
+      }
+    },
+    "switch": {
+      "plug_adapter": {
+        "name": "Plug Adapter"
+      }
+    }
+  }
+}

@@ -3,53 +3,111 @@
     "step": {
       "user": {
         "title": "Connect your MAX! CUL",
-        "description": "Choose how Home Assistant can reach your CUL device.",
+        "description": "First choose how the CUL is connected. Choose the direct option if it is plugged into the Home Assistant server. Choose network if it is connected to another device and offers a Telnet connection.",
         "data": {
-          "device_type": "Connection type"
+          "device_type": "How is your CUL connected?"
         }
       },
       "device_picker": {
-        "title": "Choose a serial CUL",
-        "description": "Select the serial port your CUL is connected to. Choose “Enter manually” if your device is not listed.",
+        "title": "Choose your CUL",
+        "description": "Choose the entry that matches your CUL. The device name, USB path, and serial number can help identify it. If you are not sure, check the label on the CUL or choose the manual option.",
         "data": {
-          "device_path": "Serial device"
+          "device_path": "CUL device"
+        },
+        "data_description": {
+          "device_path": "Choose the CUL, not another USB device. If no entry matches, select the manual option."
         }
       },
       "manual_device_path": {
-        "title": "Enter a device path",
-        "description": "Enter a serial path such as /dev/serial/by-id/your-device, or a telnet URL such as telnet://192.168.1.10:2323.",
+        "title": "Enter your CUL address",
+        "description": "Enter the device path shown by Home Assistant, for example /dev/serial/by-id/usb-your-device. If your CUL is on another computer, go back and choose the network option instead.",
         "data": {
-          "device_path": "Serial path or telnet URL"
+          "device_path": "CUL device path"
+        },
+        "data_description": {
+          "device_path": "If available, use the stable path beginning with /dev/serial/by-id rather than /dev/ttyACM0."
         }
       },
       "pick_host": {
         "title": "Connect over the network",
-        "description": "Enter the host name or IP address of your CUL's telnet server. The default port is 2323.",
+        "description": "Enter the name or IP address of the computer or device that the CUL is connected to. This must be the address of a CUL Telnet server, not the Home Assistant address. The usual port is 2323.",
         "data": {
-          "host": "Host or IP address",
-          "port": "Telnet port"
+          "host": "CUL server name or IP address",
+          "port": "Port (usually 2323)"
+        },
+        "data_description": {
+          "host": "Example: 192.168.1.10",
+          "port": "Leave this as 2323 unless your CUL server uses a different port."
         }
       }
     },
     "error": {
-      "cannot_connect_to_device": "Could not communicate with a CUL at this address. Check the path, host, port, permissions, and that the device is powered on.",
-      "cul_in_use": "This CUL serial port is already in use by another application or Docker container. Stop the other process, then try again.",
-      "cul_no_response": "The CUL did not return a valid firmware version. Check the connection and firmware, and make sure no other application or Docker container is using the CUL."
+      "cannot_connect_to_device": "Home Assistant could not open this address. Check that the CUL is powered on, the address is correct, and Home Assistant has permission to use it.",
+      "cul_in_use": "Another program or Home Assistant add-on is using this CUL. Stop that program or add-on, then try again. A serial CUL can only be used by one program at a time.",
+      "cul_no_response": "The CUL opened, but did not answer. Check its power and USB/network connection. If another program or add-on uses the CUL, stop it and try again."
     },
     "abort": {
-      "already_configured": "This CUL connection is already configured."
+      "already_configured": "This CUL is already set up in Home Assistant.",
+      "no_paired_devices": "There are no saved devices to correct yet. Pair a MAX! device first, then reopen the CulMax options."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "CUL radio settings",
-        "description": "Set the radio address used by this CUL and optionally override the detected type of a paired device.",
-        "data": {
-          "sender_id": "CUL radio address (decimal; default 1193046)",
-          "override_device": "Paired device",
-          "override_type": "Device type override"
+        "title": "CulMax settings",
+        "description": "Choose one setting to change. Most people do not need to change the CUL radio address. Use the device type option only if a device appears as the wrong kind of entity.",
+        "menu_options": {
+          "radio_settings": "Change CUL radio address",
+          "override_device": "Fix a device shown as the wrong type"
         }
+      },
+      "radio_settings": {
+        "title": "CUL radio address",
+        "description": "This is the radio address Home Assistant uses for the CUL. Leave the suggested value unchanged unless you know it must be different.",
+        "data": {
+          "sender_id": "Radio address"
+        },
+        "data_description": {
+          "sender_id": "Advanced setting: 1193046 is the same address as 0x123456. Leave the suggested value unchanged unless you were told to use another address."
+        }
+      },
+      "override_device": {
+        "title": "Choose the device to correct",
+        "description": "Select the MAX! device that appears incorrectly in Home Assistant. The address and detected type help distinguish devices with similar names.",
+        "data": {
+          "override_device": "Device"
+        }
+      },
+      "override_type": {
+        "title": "Choose what the device really is",
+        "description": "Choose the physical device from the list. For example, choose Plug Adapter if it appeared as a thermostat. This setting affects only the selected device. To undo a correction, choose the option that says Use the type CulMax detected.",
+        "data": {
+          "override_type": "Physical device type"
+        }
+      }
+    }
+  },
+  "selector": {
+    "connection_type": {
+      "options": {
+        "serial port": "Plugged into the Home Assistant server",
+        "network": "Connected to another device (network/Telnet)"
+      }
+    },
+    "serial_device": {
+      "options": {
+        "Enter manually": "My CUL is not listed - enter its path"
+      }
+    },
+    "device_type_override": {
+      "options": {
+        "HeatingThermostat": "Heating thermostat",
+        "HeatingThermostatPlus": "Heating thermostat Plus",
+        "WallMountedThermostat": "Wall-mounted thermostat",
+        "ShutterContact": "Window contact",
+        "PushButton": "Eco Taster",
+        "PlugAdapter": "Plug Adapter (socket switch)",
+        "__reported__": "Use the device type detected by CulMax"
       }
     }
   },

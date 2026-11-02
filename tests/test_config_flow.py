@@ -9,7 +9,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.maxcul import (
     CONF_DEVICE_PATH,
     CONF_DEVICE_TYPE_OVERRIDES,
-    CONF_SENDER_ID,
     DOMAIN,
 )
 from custom_components.maxcul import config_flow
@@ -41,13 +40,23 @@ async def test_options_flow_saves_and_clears_device_type_override(
     config_entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(config_entry.entry_id)
-    assert result["type"] == "form"
+    assert result["type"] == "menu"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"next_step_id": "override_device"},
+    )
+    assert result["step_id"] == "override_device"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {config_flow.CONF_OVERRIDE_DEVICE: "12345"},
+    )
+    assert result["step_id"] == "override_type"
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            CONF_SENDER_ID: 0x123456,
-            config_flow.CONF_OVERRIDE_DEVICE: "12345",
             config_flow.CONF_OVERRIDE_TYPE: PLUG_ADAPTER,
         },
     )
@@ -59,14 +68,35 @@ async def test_options_flow_saves_and_clears_device_type_override(
     result = await hass.config_entries.options.async_init(config_entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
+        {"next_step_id": "override_device"},
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {config_flow.CONF_OVERRIDE_DEVICE: "12345"},
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
         {
-            CONF_SENDER_ID: 0x123456,
-            config_flow.CONF_OVERRIDE_DEVICE: "12345",
             config_flow.CONF_OVERRIDE_TYPE: config_flow.USE_REPORTED_DEVICE_TYPE,
         },
     )
     assert result["type"] == "create_entry"
     assert config_entry.options[CONF_DEVICE_TYPE_OVERRIDES] == {}
+
+
+async def test_options_flow_without_devices_shows_radio_settings(
+    hass: HomeAssistant,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_DEVICE_PATH: "/dev/tty0", CONF_DEVICES: {}},
+    )
+    config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "radio_settings"
 
 
 def test_serial_connection_probe_uses_cul_settings(

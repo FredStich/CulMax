@@ -442,11 +442,11 @@ data:
 
 The **CUL radio address** option defaults to `0x123456` (`1193046`, entered as
 decimal in the options form). Change it only when you need to assign a
-different 24-bit radio address to the CUL. If a device announces a type that
-does not match its physical model, select it under **Paired device** and choose
-the correct **Device type override**. Saving the option reloads the integration
-and routes that device to the selected platform. Choose **Use type reported by
-device** to remove an override.
+different 24-bit radio address to the CUL. To correct a device shown as the
+wrong kind of entity, open the CulMax options and choose **Fix a device shown
+as the wrong type**. Select the device, then select what it physically is.
+CulMax reloads and moves that device to the appropriate platform. Choose
+**Use the device type detected by CulMax** to undo the correction.
 
 ## Inspecting entities
 
