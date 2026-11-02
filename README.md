@@ -4,10 +4,12 @@ Control MAX! eQ-3 radiator thermostats, wall thermostats, shutter contacts,
 Eco Tasters, and Plug Adapters using a CUL device connected to Home Assistant
 over USB/serial or a network telnet connection.
 
-> **Former Note of PowerPaul:** This integration was originally written for personal use and is not
-> actively maintained. Hardware, firmware, and Home Assistant versions may
-> affect compatibility. It is intentionally not distributed through HACS.
-> Contributions and bug reports are welcome.
+> **Project history:** CulMax is based on the original MAX! integration by
+> PowerPaul. That original project was written for personal use and is not
+> actively maintained by its original author. CulMax is maintained separately
+> and can be installed through HACS as a custom repository. Inclusion in the
+> official HACS catalog requires a separate review and has not been approved
+> yet.
 >
 > **My Note by Fred:**
 > I used to run FHEM with a MAX! CUL in Docker on a QNAP NAS, but it was time
@@ -17,7 +19,28 @@ over USB/serial or a network telnet connection.
 
 ## Install
 
-This integration is installed manually; it is not distributed through HACS.
+### Install with HACS
+
+HACS is the easiest way to install and update CulMax. CulMax is available as a
+**custom repository**; it may not appear in the default HACS search.
+
+1. Make sure [HACS is installed](https://www.hacs.xyz/docs/use/).
+2. In Home Assistant, open **HACS**.
+3. Open the **three-dot menu** in the top-right corner and choose
+   **Custom repositories**.
+4. Enter `https://github.com/FredStich/CulMax` as the repository.
+5. Select **Integration** as the category and choose **Add**.
+6. Find **CulMax** in HACS and select **Download**.
+7. Restart Home Assistant when HACS asks you to.
+8. Continue with [Set up](#set-up) to connect your CUL.
+
+For updates, open CulMax in HACS and install the offered update, then restart
+Home Assistant. Do not remove the integration entry; its paired-device data
+and settings are stored by Home Assistant.
+
+### Manual installation
+
+If you do not use HACS, you can install CulMax manually:
 
 1. Find your Home Assistant configuration directory. It is the directory that
    contains `configuration.yaml` (commonly `/config` on Home Assistant OS).
@@ -52,6 +75,7 @@ For an update, back up your existing `custom_components/maxcul` directory,
 replace it with the new one, and restart Home Assistant. Do not remove the
 integration entry from Home Assistant; its saved device and option data is
 stored separately from the integration files.
+
 
 ## Set up
 
