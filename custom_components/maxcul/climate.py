@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from maxcul._const import (
+from ._vendor.pymaxcul._const import (
     ATTR_DEVICE_ID,
     ATTR_DEVICE_SERIAL,
     ATTR_DEVICE_TYPE,
@@ -31,7 +31,7 @@ from .max_wall_thermostat import MaxWallThermostat
 
 
 def _is_thermostat_device_type(device_type: Any) -> bool:
-    """Return True for all Max! thermostat models supported by pymaxcul."""
+    """Return True for supported Max! thermostat models."""
     if not isinstance(device_type, str):
         return False
     upper_type = device_type.upper()
@@ -61,9 +61,23 @@ def _create_thermostat_entity(
 ):
     """Create the correct entity for the matched Max! thermostat model."""
     upper_type = device_type.upper() if isinstance(device_type, str) else ""
-    if "WALL" in upper_type or "PLUS" in upper_type:
+    if "WALL" in upper_type:
+        model = (
+            "Wall thermostat Plus"
+            if "PLUS" in upper_type
+            else "Wall-mounted thermostat"
+        )
         return MaxWallThermostat(
-            connection, device_id, name, device_path, profile_state
+            connection, device_id, name, device_path, profile_state, model
+        )
+    if "PLUS" in upper_type:
+        return MaxThermostat(
+            connection,
+            device_id,
+            name,
+            device_path,
+            profile_state,
+            "Heating thermostat Plus",
         )
     return MaxThermostat(connection, device_id, name, device_path, profile_state)
 

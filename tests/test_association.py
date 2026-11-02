@@ -16,8 +16,14 @@ from custom_components.maxcul import (
     SERVICE_DEASSOCIATE,
     MaxCulConnection,
 )
-from maxcul._const import HEATING_THERMOSTAT, SHUTTER_CONTACT
-from maxcul._messages import AddLinkPartnerMessage, RemoveLinkPartnerMessage
+from custom_components.maxcul._vendor.pymaxcul._const import (
+    HEATING_THERMOSTAT,
+    SHUTTER_CONTACT,
+)
+from custom_components.maxcul._vendor.pymaxcul._messages import (
+    AddLinkPartnerMessage,
+    RemoveLinkPartnerMessage,
+)
 
 
 @pytest.mark.parametrize(

@@ -17,14 +17,13 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 from serial import Serial, SerialException
 
-from maxcul._telnet import TelnetSerial
-
 from . import (
     CONF_DEVICE_PATH,
     CONF_SENDER_ID,
     DOMAIN,
     normalize_device_path,
 )
+from ._vendor.pymaxcul._telnet import TelnetSerial
 
 LOGGER = logging.getLogger(__name__)
 

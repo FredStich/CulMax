@@ -13,7 +13,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 
-from maxcul._const import ATTR_DEVICE_ID, SHUTTER_OPEN
+from ._vendor.pymaxcul._const import ATTR_DEVICE_ID, SHUTTER_OPEN
 
 from . import DOMAIN, SIGNAL_SHUTTER_UPDATE, MaxCulConnection
 

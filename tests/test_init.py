@@ -4,6 +4,7 @@ from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from pytest_homeassistant_custom_component.common import (
   MockConfigEntry
 )
@@ -11,22 +12,29 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.maxcul import (
     CONF_DEVICE_PATH,
     DOMAIN,
+    MaxCulConnection,
     SERVICE_ENABLE_PAIRING,
+    SIGNAL_THERMOSTAT_UPDATE,
     async_setup_entry,
     normalize_device_path,
 )
 
-from maxcul import (
+from custom_components.maxcul._vendor.pymaxcul import (
     EVENT_DEVICE_PAIRED,
     EVENT_DEVICE_REPAIRED,
 )
 
-from maxcul._const import (
+from custom_components.maxcul._vendor.pymaxcul._const import (
     ATTR_DEVICE_ID,
+    ATTR_DESIRED_TEMPERATURE,
     ATTR_DEVICE_TYPE,
     ATTR_DEVICE_SERIAL,
     ATTR_FIRMWARE_VERSION,
+    ATTR_MEASURED_TEMPERATURE,
     HEATING_THERMOSTAT
+)
+from custom_components.maxcul._vendor.pymaxcul._messages import (
+    WallThermostatControlMessage,
 )
 
 from .conftest import MockConnectionFactory, max_connection_factory
@@ -36,6 +44,39 @@ def test_normalize_device_path():
     assert normalize_device_path("TELNET://MAXCUL.local:2323") == "maxcul.local:2323"
     assert normalize_device_path("maxcul.local:2323") == "maxcul.local:2323"
     assert normalize_device_path("/dev/ttyUSB0") == "/dev/ttyUSB0"
+
+
+async def test_wall_thermostat_control_message_dispatches_temperature(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Translate wall thermostat fields to climate attributes."""
+    class FakeMaxConnection:
+        def __init__(self, **kwargs):
+            self._handle_message = lambda message, signal_strength: None
+            self._resend_message = lambda: None
+
+    monkeypatch.setattr(
+        "custom_components.maxcul.MaxConnection", FakeMaxConnection
+    )
+    updates = []
+    async_dispatcher_connect(hass, SIGNAL_THERMOSTAT_UPDATE, updates.append)
+    connection = MaxCulConnection(hass, "/dev/tty0")
+    message = WallThermostatControlMessage(
+        sender_id=0x6A285,
+        desired_temperature=30.0,
+        temperature=22.6,
+    )
+
+    connection._connection._handle_message(message, 254)
+    await hass.async_block_till_done()
+
+    assert updates == [
+        {
+            ATTR_DEVICE_ID: 0x6A285,
+            ATTR_DESIRED_TEMPERATURE: 30.0,
+            ATTR_MEASURED_TEMPERATURE: 22.6,
+        }
+    ]
 
 
 async def test_setup_entry(hass):

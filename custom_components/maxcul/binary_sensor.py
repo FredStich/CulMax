@@ -14,11 +14,13 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from maxcul._const import (
+from ._vendor.pymaxcul._const import (
     ATTR_BATTERY_LOW,
     ATTR_DEVICE_ID,
     ATTR_DEVICE_SERIAL,
     ATTR_DEVICE_TYPE,
+    ATTR_STATE,
+    PUSH_BUTTON,
 )
 
 from . import (
@@ -27,6 +29,7 @@ from . import (
     DOMAIN,
     SIGNAL_DEVICE_PAIRED,
     SIGNAL_DEVICE_REPAIRED,
+    SIGNAL_PUSH_BUTTON_UPDATE,
     SIGNAL_SHUTTER_UPDATE,
     SIGNAL_THERMOSTAT_UPDATE,
     MaxCulConfigEntry,
@@ -50,11 +53,19 @@ def _normalize_device_label(device_type: str | None) -> str:
 
 
 def _is_shutter_device_type(device_type: Any) -> bool:
-    """Return True for Max! contact/window models supported by pymaxcul."""
+    """Return True for supported Max! contact/window models."""
     if not isinstance(device_type, str):
         return False
     upper_type = device_type.upper()
     return "SHUTTER" in upper_type or "WINDOW" in upper_type or "CONTACT" in upper_type
+
+
+def _is_push_button_device_type(device_type: Any) -> bool:
+    """Return True for MAX! Eco Taster devices."""
+    return (
+        isinstance(device_type, str)
+        and device_type.casefold() == PUSH_BUTTON.casefold()
+    )
 
 
 async def async_setup_entry(
@@ -74,6 +85,8 @@ async def async_setup_entry(
         entities.append(MaxBattery(connection, device_id, device[CONF_NAME]))
         if _is_shutter_device_type(device[CONF_TYPE]):
             entities.append(MaxShutter(connection, device_id, device[CONF_NAME]))
+        elif _is_push_button_device_type(device[CONF_TYPE]):
+            entities.append(MaxPushButton(connection, device_id, device[CONF_NAME]))
 
     async_add_entities(entities)
 
@@ -105,6 +118,10 @@ async def async_setup_entry(
 
         if _is_shutter_device_type(device_type):
             devices_to_add.append(MaxShutter(connection, device_id, device_name))
+        elif _is_push_button_device_type(device_type):
+            devices_to_add.append(
+                MaxPushButton(connection, device_id, device_name)
+            )
 
         async_add_entities(devices_to_add)
 
@@ -159,6 +176,9 @@ class MaxBattery(BinarySensorEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, SIGNAL_SHUTTER_UPDATE, update)
         )
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_PUSH_BUTTON_UPDATE, update)
+        )
 
     @property
     def unique_id(self) -> str:
@@ -184,3 +204,60 @@ class MaxBattery(BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return self._battery_low
+
+
+class MaxPushButton(BinarySensorEntity):
+    """Reported on/off position of a MAX! Eco Taster."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "push_button_state"
+    _attr_icon = "mdi:toggle-switch"
+
+    def __init__(
+        self, connection: MaxCulConnection, device_id: str, name: str
+    ) -> None:
+        self._name = name
+        self._device_id = device_id
+        self._connection = connection
+        self._state: bool | None = None
+
+        self._connection.add_paired_device(self.sender_id)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return {
+            "identifiers": {(DOMAIN, self._device_id)},
+            "name": self._name,
+            "manufacturer": "eQ-3 / MAX!",
+            "model": "Eco Taster",
+            "configuration_url": "https://github.com/powerpaul17/maxcul",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Register the Eco Taster state listener."""
+
+        @callback
+        def update(payload: dict[str, Any]) -> None:
+            if payload.get(ATTR_DEVICE_ID) != self.sender_id:
+                return
+
+            state = payload.get(ATTR_STATE)
+            if isinstance(state, bool):
+                self._state = state
+                self.async_schedule_update_ha_state()
+
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_PUSH_BUTTON_UPDATE, update)
+        )
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._device_id}-push-button"
+
+    @property
+    def should_poll(self) -> bool:
+        return False
+
+    @property
+    def is_on(self) -> bool | None:
+        return self._state

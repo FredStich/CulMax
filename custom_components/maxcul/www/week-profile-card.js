@@ -139,7 +139,7 @@ class MaxculWeekProfileCard extends HTMLElement {
     const state = this._selectedThermostatState();
     if (!state) {
       this._setStatus(
-        `Thermostat „${this._config.device_id}“ nicht gefunden. Bitte eine gültige MaxCUL-Thermostat-Entität auswählen.`,
+        `Thermostat „${this._config.device_id}“ nicht gefunden. Bitte eine gültige CulMax-Thermostat-Entität auswählen.`,
         true,
         "mdi:alert-circle",
       );
@@ -569,7 +569,7 @@ class MaxculWeekProfileCardEditor extends HTMLElement {
         input, ha-entity-picker { box-sizing: border-box; display: block; width: 100%; min-height: 40px; margin-top: 5px; }
         p { color: var(--secondary-text-color); }
       </style>
-      <p>Wähle das MaxCUL-Thermostat aus der Liste aus. Alternativ kann in YAML eine Hex-Adresse oder der Friendly Name angegeben werden.</p>
+      <p>Wähle das CulMax-Thermostat aus der Liste aus. Alternativ kann in YAML eine Hex-Adresse oder der Friendly Name angegeben werden.</p>
       <label>Thermostat<ha-entity-picker class="device-id"></ha-entity-picker></label>
       <label>CUL-Verbindung (optional)<input class="device-path" placeholder="/dev/ttyUSB0"></label>
     `;

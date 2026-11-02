@@ -1,14 +1,13 @@
-# MaxCUL Component for Home Assistant
+# CulMax for Home Assistant
 
-Control MAX! eQ-3 radiator thermostats, wall thermostats, and shutter contacts
-using a CUL device connected to Home Assistant over USB/serial or a network
-telnet connection.
+Control MAX! eQ-3 radiator thermostats, wall thermostats, shutter contacts,
+Eco Tasters, and Plug Adapters using a CUL device connected to Home Assistant
+over USB/serial or a network telnet connection.
 
 > **Note:** This integration was originally written for personal use and is not
 > actively maintained. Hardware, firmware, and Home Assistant versions may
 > affect compatibility. It is intentionally not distributed through HACS.
 > Contributions and bug reports are welcome.
-> Thanks to Paul!
 >
 > I used to run FHEM with a MAX! CUL in Docker on a QNAP NAS, but it was time
 > to move to Home Assistant. I chose the sleek MAX! thermostats because they
@@ -25,7 +24,7 @@ included brand assets and appears in the integration list after restart.
 ## Set up
 
 1. In Home Assistant, open **Settings → Devices & services → Add integration**.
-2. Search for **Max CUL**.
+2. Search for **CulMax**.
 3. Choose **Serial port** for a directly connected CUL, or **Network** for a
    CUL telnet server.
 4. If your serial device is not listed, choose **Enter manually** and provide
@@ -33,9 +32,10 @@ included brand assets and appears in the integration list after restart.
 5. The integration checks that the device responds to a CUL firmware query.
 
 After setup, pair MAX! devices with the CUL. The integration creates climate
-entities for thermostat models, including wall thermostat variants, and window
-sensors for shutter contacts; battery sensors are also created for paired
-devices.
+entities for thermostat models, including wall thermostat variants, window
+sensors for shutter contacts, a state sensor for the MAX! Eco Taster, and an
+outlet switch for the MAX! Plug Adapter. Battery sensors are also created for
+paired devices.
 
 ### What the integration provides
 
@@ -44,6 +44,8 @@ devices.
 | MAX! heating thermostat | Climate entity with target temperature, mode, preset, and reported valve position |
 | MAX! wall thermostat | Climate entity |
 | MAX! shutter contact | Window binary sensor |
+| MAX! Eco Taster | Binary sensor for its reported on/off state and battery status |
+| MAX! Plug Adapter | Outlet switch with reported state and on/off control |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
 
@@ -54,28 +56,35 @@ device update.
 
 ## Architecture
 
-The integration uses a local-push connection: `pymaxcul` communicates with the
-CUL, and its events are forwarded through Home Assistant's dispatcher to the
-platform entities. Pairing is started through the `maxcul.enable_pairing`
-service.
+The integration uses a local-push connection. Its MAX! protocol layer is
+bundled from [pymaxcul 0.1.14](https://github.com/powerpaul17/pymaxcul), so
+Home Assistant does not install that library from Git. The bundled code keeps
+its BSD license and author history in
+[`custom_components/maxcul/_vendor/pymaxcul`](./custom_components/maxcul/_vendor/pymaxcul);
+its Telnet transport is adapted for Python versions without `telnetlib`.
+Events are forwarded through Home Assistant's dispatcher to the platform
+entities. Pairing is started through the `maxcul.enable_pairing` service.
 
 ```mermaid
 flowchart LR
     User --> ConfigFlow["Home Assistant config flow"]
-    ConfigFlow -->|select and verify connection| ConfigEntry["MaxCUL config entry"]
-    ConfigEntry --> Integration["MaxCUL integration"]
+    ConfigFlow -->|select and verify connection| ConfigEntry["CulMax config entry"]
+    ConfigEntry --> Integration["CulMax integration"]
     Integration --> Connection["MaxCulConnection wrapper"]
-    Connection --> PyMaxCUL["pymaxcul MaxConnection"]
+    Connection --> PyMaxCUL["Bundled MAX! protocol layer"]
     PyMaxCUL <-->|serial or telnet| CUL["CUL device"]
-    CUL <-->|MAX! radio| Devices["MAX! thermostats and shutter contacts"]
+    CUL <-->|MAX! radio| Devices["MAX! thermostats, contacts, Eco Taster, Plug Adapter"]
 
-    Devices -->|thermostat and shutter events| PyMaxCUL
+    Devices -->|thermostat, contact, and device events| PyMaxCUL
     PyMaxCUL -->|callback| Connection
-    Connection -->|Home Assistant dispatcher| Platforms["Climate and binary_sensor platforms"]
+    Connection -->|Home Assistant dispatcher| Platforms["Climate, binary_sensor, and switch platforms"]
     Platforms --> Thermostat["Thermostat climate entities (incl. wall thermostat+)"]
     Platforms --> Shutter["Shutter window sensors"]
+    Platforms --> EcoTaster["Eco Taster state sensor"]
     Platforms --> Battery["Battery sensors"]
     Thermostat -->|temperature, mode and week profile commands| Connection
+    Platforms --> PlugAdapter["Plug Adapter outlet switch"]
+    PlugAdapter -->|on/off commands| Connection
 
     User -->|enable_pairing service| Pairing["Pairing on matching connection"]
     Pairing --> Connection
@@ -85,7 +94,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Start["Add Max CUL integration"] --> Choose{"Connection type"}
+    Start["Add CulMax integration"] --> Choose{"Connection type"}
     Choose -->|Serial| SerialChoice["Select a listed port or enter a path"]
     Choose -->|Network| NetworkChoice["Enter host and port"]
     SerialChoice --> Probe["Probe CUL firmware"]
@@ -93,8 +102,8 @@ flowchart TD
     Probe -->|No response| Retry["Show connection error and retry"]
     Retry --> Choose
     Probe -->|Responds| Create["Create config entry"]
-    Create --> StartConnection["Start MaxCUL connection"]
-    StartConnection --> Load["Load climate and binary sensor platforms"]
+    Create --> StartConnection["Start CulMax connection"]
+    StartConnection --> Load["Load climate, binary sensor, and switch platforms"]
     Load --> Known{"Known paired devices?"}
     Known -->|Yes| Restore["Restore their entities"]
     Known -->|No| PairService
@@ -106,8 +115,12 @@ flowchart TD
     Save --> Type{"MAX! device type"}
     Type -->|Thermostat / wall thermostat| Climate["Create climate entity"]
     Type -->|Shutter contact| Window["Create window sensor"]
+    Type -->|Eco Taster| Eco["Create state sensor"]
+    Type -->|Plug Adapter| Plug["Create outlet switch"]
     Climate --> Battery["Create battery sensor"]
     Window --> Battery
+    Eco --> Battery
+    Plug --> Battery
     Battery --> Updates["Forward device updates to entities"]
 ```
 
@@ -121,10 +134,10 @@ the same address entered during setup, for example
 from 1 to 300 seconds.
 
 Devices reported by a MAX! pairing or repair announcement are saved in the
-integration entry and restored after restart. The CUL/pymaxcul interface does
-not provide an inventory of every device previously paired to the CUL, so a
-device missing from Home Assistant cannot be rediscovered just by restarting.
-It must announce itself again through pairing or repair.
+integration entry and restored after restart. The CUL interface does not
+provide an inventory of every device previously paired to the CUL, so a device
+missing from Home Assistant cannot be rediscovered just by restarting. It must
+announce itself again through pairing or repair.
 
 Example service call for one configured CUL:
 
@@ -146,6 +159,38 @@ data:
 Use the same serial path or telnet address that you entered during setup.
 Pairing is enabled for 30 seconds by default; the duration can be set from 1
 to 300 seconds.
+
+## MAX! Eco Taster
+
+The Eco Taster is represented by a binary sensor for its reported switch
+position. The entity is read-only: it reflects the state sent by the physical
+button and does not provide a remote control action. Its state is `unknown`
+until the integration receives a report from the device. A separate diagnostic
+battery sensor reports whether the battery is low.
+
+## Controlling a MAX! Plug Adapter
+
+The Plug Adapter appears as an outlet switch. Use the standard Home Assistant
+switch actions:
+
+```yaml
+action: switch.turn_on
+target:
+  entity_id: switch.kitchen_plug_adapter
+```
+
+```yaml
+action: switch.turn_off
+target:
+  entity_id: switch.kitchen_plug_adapter
+```
+
+The switch state is based on the adapter's reported state and remains `unknown`
+until the integration receives a report. On/off commands use MAX!'s manual-mode
+temperature sentinels; this is protocol behavior and does not set a room
+temperature. The switch is not updated optimistically, so it changes state
+after a device report arrives. A diagnostic battery sensor is also created for
+the adapter.
 
 ## Controlling a thermostat
 
@@ -369,7 +414,7 @@ different 24-bit radio address to the CUL.
 
 ## Inspecting entities
 
-Open **Developer Tools → States** and select a MaxCUL entity to inspect its
+Open **Developer Tools → States** and select a CulMax entity to inspect its
 latest values. Thermostat entities include these integration-specific
 attributes:
 
@@ -385,6 +430,16 @@ The current temperature and valve position can be `null` until a thermostat
 message containing those values is received. Valve position is not a
 measurement of actual radiator water flow.
 
+## Running tests
+
+Use Python 3.13 or newer with the current pinned Home Assistant test harness.
+Install the test dependencies and run the test suite from the repository root:
+
+```sh
+python -m pip install -r requirements_test.txt
+pytest
+```
+
 ## Troubleshooting
 
 - **Device not listed:** connect it before opening the flow, or enter its serial
@@ -396,8 +451,8 @@ measurement of actual radiator water flow.
 - **Pairing service cannot find the connection:** enter the same serial path or
   telnet address used to set up that config entry.
 - **A paired device is missing after restart:** the integration restores devices
-  saved in its config entry. pymaxcul cannot query a complete device inventory
-  from the CUL, so the missing device must announce itself through pairing or
+  saved in its config entry. The CUL does not provide a complete device
+  inventory, so the missing device must announce itself through pairing or
   repair again.
 - **Association does not complete:** check that both devices are paired to the
   same loaded CUL, call the service, then open or close the window to wake the
@@ -410,6 +465,7 @@ measurement of actual radiator water flow.
   sent messages. Check that the CUL has enough send budget and the thermostat
   is reachable. The stored thermostat schedule cannot be read back for
   comparison.
-
-## Outlook
-Change German language to English ;-)
+- **Eco Taster or Plug Adapter state is `unknown`:** the entity waits for a
+  state report from the device. Check that it is paired and within radio range,
+  then press the Eco Taster or send a switch command to the Plug Adapter and
+  wait for its next report.

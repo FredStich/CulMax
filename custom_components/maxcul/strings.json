@@ -53,6 +53,14 @@
     "binary_sensor": {
       "battery": {
         "name": "Battery"
+      },
+      "push_button_state": {
+        "name": "Switch state"
+      }
+    },
+    "switch": {
+      "plug_adapter": {
+        "name": "Plug Adapter"
       }
     }
   }

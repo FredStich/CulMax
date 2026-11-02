@@ -8,4 +8,4 @@ from .max_thermostat import MaxThermostat
 class MaxWallThermostat(MaxThermostat):
     """Climate entity for the Max! Wall Thermostat+ model."""
 
-    _attr_icon = "mdi:radiator"
+    _attr_icon = "mdi:thermometer"

@@ -22,26 +22,35 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, dispatcher_send
 from homeassistant.helpers.typing import ConfigType
 
-from maxcul import (
+from ._vendor.pymaxcul import (
     EVENT_DEVICE_PAIRED,
     EVENT_DEVICE_REPAIRED,
+    EVENT_PUSH_BUTTON_UPDATE,
     EVENT_SHUTTER_UPDATE,
     EVENT_THERMOSTAT_UPDATE,
     MaxConnection,
 )
-from maxcul._const import (
+from ._vendor.pymaxcul._const import (
+    ATTR_BATTERY_LOW,
     ATTR_DEVICE_ID,
+    ATTR_DESIRED_TEMPERATURE,
+    ATTR_MEASURED_TEMPERATURE,
+    ATTR_MODE,
+    ATTR_VALVE_POSITION,
     DEVICE_TYPES_BY_NAME,
     HEATING_THERMOSTAT,
     HEATING_THERMOSTAT_PLUS,
+    MODE_MANUAL,
     SHUTTER_CONTACT,
     WALL_MOUNTED_THERMOSTAT,
 )
-from maxcul._messages import (
+from ._vendor.pymaxcul._messages import (
     AckMessage,
     AddLinkPartnerMessage,
     ConfigWeekProfileMessage,
     RemoveLinkPartnerMessage,
+    WallThermostatControlMessage,
+    WallThermostatStateMessage,
 )
 
 from .week_profile import WeekProfileChunk, compile_week_profile
@@ -50,7 +59,7 @@ LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "maxcul"
 
-PLATFORMS = ["climate", "binary_sensor"]
+PLATFORMS = ["climate", "binary_sensor", "switch"]
 
 CONF_DEVICE_PATH = "device_path"
 CONF_SENDER_ID = "sender_id"
@@ -96,6 +105,7 @@ SIGNAL_DEVICE_PAIRED = f"{DOMAIN}.device_paired"
 SIGNAL_DEVICE_REPAIRED = f"{DOMAIN}.device_repaired"
 SIGNAL_THERMOSTAT_UPDATE = f"{DOMAIN}.thermostat_update"
 SIGNAL_SHUTTER_UPDATE = f"{DOMAIN}.shutter_update"
+SIGNAL_PUSH_BUTTON_UPDATE = f"{DOMAIN}.push_button_update"
 SIGNAL_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
 EVENT_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
 
@@ -660,6 +670,21 @@ class MaxCulConnection:
             original_handle_message(message, signal_strength)
             if isinstance(message, AckMessage):
                 self._handle_week_profile_ack(message)
+            elif isinstance(
+                message, (WallThermostatControlMessage, WallThermostatStateMessage)
+            ):
+                payload = {ATTR_DEVICE_ID: message.sender_id}
+                for attribute, message_attribute in (
+                    (ATTR_MEASURED_TEMPERATURE, "temperature"),
+                    (ATTR_DESIRED_TEMPERATURE, "desired_temperature"),
+                    (ATTR_MODE, "mode"),
+                    (ATTR_VALVE_POSITION, "valve_position"),
+                    (ATTR_BATTERY_LOW, "battery_low"),
+                ):
+                    value = getattr(message, message_attribute, None)
+                    if value is not None:
+                        payload[attribute] = value
+                self._callback(EVENT_THERMOSTAT_UPDATE, payload)
 
         def resend_message() -> None:
             original_resend_message()
@@ -694,6 +719,9 @@ class MaxCulConnection:
 
         elif event == EVENT_SHUTTER_UPDATE:
             dispatcher_send(self._hass, SIGNAL_SHUTTER_UPDATE, payload)
+
+        elif event == EVENT_PUSH_BUTTON_UPDATE:
+            dispatcher_send(self._hass, SIGNAL_PUSH_BUTTON_UPDATE, payload)
 
         elif event == EVENT_WEEK_PROFILE_UPDATE:
             payload[ATTR_CONNECTION_DEVICE_PATH] = self._device_path
@@ -769,6 +797,16 @@ class MaxCulConnection:
             mode,
         )
         self._connection.set_temperature(device_id, target_temperature, mode)
+
+    def set_plug_adapter_state(self, device_id: int, is_on: bool) -> None:
+        """Set a Plug Adapter relay using MAX!'s on/off temperature sentinels."""
+        target_temperature = 30.5 if is_on else 4.5
+        if not self._connection.set_temperature(
+            device_id, target_temperature, MODE_MANUAL
+        ):
+            raise HomeAssistantError(
+                f"Could not queue state change for MAX! Plug Adapter {device_id}"
+            )
 
     def set_week_profile(
         self, device_id: int, chunks: list[WeekProfileChunk], request_id: str

@@ -19,8 +19,8 @@ from custom_components.maxcul.week_profile import (
     WeekProfileChunk,
     compile_week_profile,
 )
-from maxcul._const import HEATING_THERMOSTAT
-from maxcul._messages import AckMessage
+from custom_components.maxcul._vendor.pymaxcul._const import HEATING_THERMOSTAT
+from custom_components.maxcul._vendor.pymaxcul._messages import AckMessage
 
 
 def _complete_profile(saturday: str = "Sat 20") -> str:

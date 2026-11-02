@@ -1,6 +1,6 @@
 enable_pairing:
   name: Enable device pairing
-  description: Open the pairing window on a MaxCUL connection so nearby MAX! devices can be paired.
+  description: Open the pairing window on a CulMax connection so nearby MAX! devices can be paired.
   fields:
     device_path:
       name: CUL connection
@@ -25,7 +25,7 @@ set_week_profile:
   fields:
     device_id:
       name: Thermostat
-      description: Select a MaxCUL thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
       selector:
         entity:
           filter:
@@ -66,7 +66,7 @@ associate:
   fields:
     thermostat_id:
       name: Thermostat
-      description: Select a MaxCUL thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
       selector:
         entity:
           filter:
@@ -75,7 +75,7 @@ associate:
               integration: maxcul
     window_contact_id:
       name: Window contact
-      description: Select a MaxCUL window contact. Automations may also use its friendly name or hexadecimal address.
+      description: Select a CulMax window contact. Automations may also use its friendly name or hexadecimal address.
       selector:
         entity:
           filter:
@@ -98,7 +98,7 @@ deassociate:
   fields:
     thermostat_id:
       name: Thermostat
-      description: Select a MaxCUL thermostat. Automations may also use its friendly name or hexadecimal address.
+      description: Select a CulMax thermostat. Automations may also use its friendly name or hexadecimal address.
       selector:
         entity:
           filter:
@@ -107,7 +107,7 @@ deassociate:
               integration: maxcul
     window_contact_id:
       name: Window contact
-      description: Select a MaxCUL window contact. Automations may also use its friendly name or hexadecimal address.
+      description: Select a CulMax window contact. Automations may also use its friendly name or hexadecimal address.
       selector:
         entity:
           filter:

@@ -10,6 +10,7 @@ from homeassistant.const import (
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers import device_registry as dr
 
 from homeassistant.components.climate import (
     HVAC_MODE_HEAT
@@ -19,7 +20,7 @@ from pytest_homeassistant_custom_component.common import (
   MockConfigEntry
 )
 
-from maxcul._const import (
+from custom_components.maxcul._vendor.pymaxcul._const import (
     ATTR_DEVICE_ID,
     ATTR_BATTERY_LOW,
     ATTR_MEASURED_TEMPERATURE,
@@ -115,4 +116,36 @@ async def test_wall_thermostat_plus_update(hass: HomeAssistant):
     assert state.state == HVAC_MODE_HEAT
     assert state.attributes.get('temperature') == 19.0
     assert state.attributes.get('current_temperature') == 20.5
+    assert state.attributes.get('icon') == 'mdi:thermometer'
 
+    device = dr.async_get(hass).async_get_device({(DOMAIN, '67890')})
+    assert device is not None
+    assert device.model == 'Wall thermostat Plus'
+
+
+async def test_heating_thermostat_plus_uses_heating_thermostat_presentation(
+    hass: HomeAssistant,
+):
+    config = {
+        CONF_DEVICE_PATH: '/dev/tty0',
+        CONF_DEVICES: {
+            '67891': {
+                CONF_NAME: 'HeatingThermostatPlus',
+                CONF_TYPE: 'HEATING_THERMOSTAT_PLUS'
+            }
+        }
+    }
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data=config, entry_id='test-heating-plus'
+    )
+
+    assert await async_setup_entry(hass, config_entry)
+    await hass.async_block_till_done()
+
+    state = hass.states.get('climate.heatingthermostatplus')
+    assert state is not None
+    assert state.attributes.get('icon') == 'mdi:home-thermometer'
+
+    device = dr.async_get(hass).async_get_device({(DOMAIN, '67891')})
+    assert device is not None
+    assert device.model == 'Heating thermostat Plus'

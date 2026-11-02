@@ -19,8 +19,8 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 
-from maxcul._const import ATTR_DEVICE_ID
-from maxcul import (
+from ._vendor.pymaxcul._const import ATTR_DEVICE_ID
+from ._vendor.pymaxcul import (
     ATTR_DESIRED_TEMPERATURE,
     ATTR_MEASURED_TEMPERATURE,
     MODE_AUTO,
@@ -54,11 +54,13 @@ class MaxThermostat(ClimateEntity):
         name: str,
         device_path: str,
         profile_state: dict[str, Any] | None = None,
+        model: str = "Thermostat",
     ) -> None:
         self._name = name
         self._device_id = device_id
         self._connection = connection
         self._device_path = device_path
+        self._model = model
         self._week_profile = (
             profile_state.get("profile") if isinstance(profile_state, dict) else None
         )
@@ -88,7 +90,7 @@ class MaxThermostat(ClimateEntity):
             "identifiers": {(DOMAIN, self._device_id)},
             "name": self.name,
             "manufacturer": "eQ-3 / MAX!",
-            "model": "Thermostat",
+            "model": self._model,
             "configuration_url": "https://github.com/powerpaul17/maxcul",
         }
 
