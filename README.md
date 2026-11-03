@@ -17,6 +17,13 @@ over USB/serial or a network telnet connection.
 > communicate directly with the window contacts, so the heating control keeps
 > working even while Home Assistant is restarting or temporarily unavailable, and the week profile is stored in the thermostats, again no need for live connectivity.
 
+## News
+
+- **CUL FHT ID sensor:** CulMax now reports the four-digit FHT ID returned by
+  the CUL as a diagnostic sensor. Its `homematic_id` attribute shows the
+  default HomeMatic ID derived from that value (for example, `1034` becomes
+  `F11034`). An FHT ID of `0000` means FHT communication is disabled.
+
 ## Install
 
 ### Install with HACS
