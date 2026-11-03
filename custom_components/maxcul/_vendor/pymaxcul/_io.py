@@ -43,6 +43,7 @@ class CulIoThread(threading.Thread):
         self._baudrate = baudrate
         self._stop_requested = threading.Event()
         self._cul_version = None
+        self._hardware_revision = None
         self._com_port = None
         self._remaining_budget = 0
         self._sent_callback = sent_callback
@@ -59,6 +60,11 @@ class CulIoThread(threading.Thread):
     def cul_version(self):
         """Returns the version reported from the CUL stick"""
         return self._cul_version
+
+    @property
+    def hardware_revision(self):
+        """Return the hardware revision reported by the CUL, if supported."""
+        return self._hardware_revision
 
     @property
     def fht_id(self):
@@ -266,6 +272,15 @@ class CulIoThread(threading.Thread):
                 False, "CUL did not return a valid firmware version to command V"
             )
             return False
+        self._hardware_revision = None
+        self._writeline("VH")
+        for _ in range(10):
+            time.sleep(0.1)
+            hardware_revision = self._readline()
+            if hardware_revision:
+                if re.fullmatch(r"CUL_[A-Z0-9_]+", hardware_revision):
+                    self._hardware_revision = hardware_revision
+                break
         # enable reporting of message strength
         self._writeline("X21")
         time.sleep(0.3)

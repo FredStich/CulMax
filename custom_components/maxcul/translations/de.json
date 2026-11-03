@@ -198,6 +198,9 @@
     "sensor": {
       "fht_id": {
         "name": "FHT-ID"
+      },
+      "cul_firmware_update": {
+        "name": "CUL-Firmware-Update-Status"
       }
     }
   }

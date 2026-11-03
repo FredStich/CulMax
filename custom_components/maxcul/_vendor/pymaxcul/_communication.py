@@ -108,6 +108,16 @@ class MaxConnection(threading.Thread):
         """Wait for the low-level thread's first CUL reachability result."""
         return self.com_thread.wait_for_connection(timeout)
 
+    @property
+    def cul_version(self):
+        """Return the CUL firmware version response."""
+        return self.com_thread.cul_version
+
+    @property
+    def hardware_revision(self):
+        """Return the CUL hardware revision, if reported."""
+        return self.com_thread.hardware_revision
+
     def _connection_status_changed(self, connected, error):
         self._call_callback(
             EVENT_CONNECTION_STATUS,

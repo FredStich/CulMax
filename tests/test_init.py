@@ -13,6 +13,7 @@ from custom_components.maxcul import (
     CONF_DEVICE_PATH,
     DOMAIN,
     MaxCulConnection,
+    SIGNAL_CUL_CONNECTION_STATUS,
     SERVICE_ENABLE_PAIRING,
     SIGNAL_THERMOSTAT_UPDATE,
     async_setup_entry,
@@ -25,6 +26,7 @@ from custom_components.maxcul._vendor.pymaxcul import (
     EVENT_FHT_ID_UPDATE,
 )
 
+
 from custom_components.maxcul._vendor.pymaxcul._const import (
     ATTR_DEVICE_ID,
     ATTR_DESIRED_TEMPERATURE,
@@ -32,6 +34,7 @@ from custom_components.maxcul._vendor.pymaxcul._const import (
     ATTR_DEVICE_SERIAL,
     ATTR_FIRMWARE_VERSION,
     ATTR_MEASURED_TEMPERATURE,
+    EVENT_CONNECTION_STATUS,
     HEATING_THERMOSTAT
 )
 from custom_components.maxcul._vendor.pymaxcul._messages import (
@@ -100,6 +103,30 @@ async def test_wall_thermostat_control_message_dispatches_temperature(
             ATTR_DEVICE_ID: 0x6A285,
             ATTR_DESIRED_TEMPERATURE: 30.0,
             ATTR_MEASURED_TEMPERATURE: 22.6,
+        }
+    ]
+
+
+async def test_connection_status_dispatches_device_path(
+    hass: HomeAssistant,
+) -> None:
+    updates = []
+    async_dispatcher_connect(
+        hass, SIGNAL_CUL_CONNECTION_STATUS, updates.append
+    )
+    connection = MaxCulConnection(hass, "/dev/ttyACM0")
+
+    connection._callback(
+        EVENT_CONNECTION_STATUS,
+        {"connected": True, "error": None},
+    )
+    await hass.async_block_till_done()
+
+    assert updates == [
+        {
+            "connected": True,
+            "error": None,
+            "connection_device_path": "/dev/ttyACM0",
         }
     ]
 

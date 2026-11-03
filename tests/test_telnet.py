@@ -102,6 +102,38 @@ def test_io_thread_returns_line_after_reconnecting() -> None:
     assert io_thread._readline() == "Zmessage"
 
 
+def test_io_thread_reads_hardware_revision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FirmwarePort:
+        def __init__(self) -> None:
+            self.responses = iter(
+                [
+                    b"V 1.30.0 a-culfw Build: 1\r\n",
+                    b"",
+                    b"",
+                    b"CUL_V3\r\n",
+                ]
+            )
+            self.writes: list[bytes] = []
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        def readline(self) -> bytes:
+            return next(self.responses, b"")
+
+    io_thread = _io.CulIoThread("/dev/ttyACM0", 38400)
+    port = FirmwarePort()
+    io_thread._com_port = port
+    monkeypatch.setattr(_io.time, "sleep", lambda _seconds: None)
+    io_thread._report_connection_status = lambda _connected, _error: None
+    assert io_thread._initialize_serial_device()
+
+    assert io_thread.hardware_revision == "CUL_V3"
+    assert b"VH\r\n" in port.writes
+
+
 @pytest.mark.parametrize("fht_id", ["1034", "0000"])
 def test_io_thread_reports_fht_id_response(fht_id: str) -> None:
     io_thread = _io.CulIoThread.__new__(_io.CulIoThread)

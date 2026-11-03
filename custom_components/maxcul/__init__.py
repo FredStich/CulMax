@@ -119,6 +119,7 @@ SIGNAL_SHUTTER_UPDATE = f"{DOMAIN}.shutter_update"
 SIGNAL_PUSH_BUTTON_UPDATE = f"{DOMAIN}.push_button_update"
 SIGNAL_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
 SIGNAL_FHT_ID_UPDATE = f"{DOMAIN}.fht_id_update"
+SIGNAL_CUL_CONNECTION_STATUS = f"{DOMAIN}.cul_connection_status"
 EVENT_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
 
 ATTR_CONNECTION_DEVICE_PATH = "connection_device_path"
@@ -783,6 +784,16 @@ class MaxCulConnection:
         """Return the FHT ID reported by the CUL."""
         return self._connection.fht_id
 
+    @property
+    def cul_version(self) -> str | None:
+        """Return the CUL firmware version response."""
+        return self._connection.cul_version
+
+    @property
+    def hardware_revision(self) -> str | None:
+        """Return the CUL hardware revision, if reported."""
+        return self._connection.hardware_revision
+
     def wait_for_initial_connection(self, timeout: float) -> bool:
         """Wait for the first CUL reachability result."""
         if not self._connection_ready.wait(timeout):
@@ -845,6 +856,11 @@ class MaxCulConnection:
             self._connection_status = connected
             self._connection_error = error
             self._connection_ready.set()
+            dispatcher_send(
+                self._hass,
+                SIGNAL_CUL_CONNECTION_STATUS,
+                {**payload, ATTR_CONNECTION_DEVICE_PATH: self._device_path},
+            )
             self._hass.add_job(
                 self._async_handle_connection_status, connected, error
             )

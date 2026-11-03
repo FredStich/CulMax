@@ -23,6 +23,11 @@ over USB/serial or a network telnet connection.
   the CUL as a diagnostic sensor. Its `homematic_id` attribute shows the
   default HomeMatic ID derived from that value (for example, `1034` becomes
   `F11034`). An FHT ID of `0000` means FHT communication is disabled.
+- **CUL V3 firmware checker:** CulMax checks identified a-culfw CUL V3 devices
+  for available firmware updates. If an update is available, open the
+  `update_url` attribute on the diagnostic status sensor in a browser with
+  direct USB access to the CUL. The Busware updater requires a supported
+  browser such as Chrome or Edge; CulMax does not flash firmware itself.
 
 ## Install
 
@@ -111,6 +116,7 @@ from that value (for example, `1034` becomes `F11034`).
 | MAX! shutter contact | Window binary sensor |
 | MAX! eco switch | Binary sensor for its reported on/off state and battery status |
 | MAX! plug adapter | Outlet switch with reported state and on/off control |
+| CUL V3 running a-culfw | Diagnostic firmware update status sensor and Busware updater link |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
 
