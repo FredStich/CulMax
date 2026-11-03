@@ -50,6 +50,7 @@ from ._const import (
     ATTR_VALVE_POSITION,
     CUL_BAUDRATE,
     EVENT_CONNECTION_STATUS,
+    EVENT_FHT_ID_UPDATE,
 )
 
 # local constants
@@ -83,6 +84,7 @@ class MaxConnection(threading.Thread):
             baudrate,
             sent_callback=self._sent_callback,
             connection_callback=self._connection_status_changed,
+            fht_id_callback=self._fht_id_changed,
         )
         self.stop_requested = threading.Event()
         self._pairing_enabled = threading.Event()
@@ -90,6 +92,7 @@ class MaxConnection(threading.Thread):
         self._paired_devices = set(paired_devices or ())
         self._outstanding_acks = {}
         self.callback = callback
+        self.fht_id = None
         self._msg_count = 0
 
     def run(self):
@@ -110,6 +113,11 @@ class MaxConnection(threading.Thread):
             EVENT_CONNECTION_STATUS,
             {"connected": connected, "error": error},
         )
+
+    def _fht_id_changed(self, fht_id):
+        """Publish the FHT ID reported by the CUL."""
+        self.fht_id = fht_id
+        self._call_callback(EVENT_FHT_ID_UPDATE, {"fht_id": fht_id})
 
     def stop(self, timeout=None):
         LOGGER.info("Stopping MAXCUL")

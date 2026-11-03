@@ -21,6 +21,7 @@ MIN_REQUIRED_BUDGET = 1500
 COMMAND_CHARACTER_WEIGHT = 30
 
 CUL_VERSION_PATTERN = re.compile(r"^V\s+\d+(?:\.\d+)*(?:\s+.+)?$")
+FHT_ID_PATTERN = re.compile(r"^[0-9A-Fa-f]{4}$")
 
 
 class CulIoThread(threading.Thread):
@@ -28,7 +29,12 @@ class CulIoThread(threading.Thread):
 
     # pylint: disable=too-many-instance-attributes
     def __init__(
-        self, device_path, baudrate, sent_callback=None, connection_callback=None
+        self,
+        device_path,
+        baudrate,
+        sent_callback=None,
+        connection_callback=None,
+        fht_id_callback=None,
     ):
         super().__init__()
         self.read_queue = queue.Queue()
@@ -41,6 +47,8 @@ class CulIoThread(threading.Thread):
         self._remaining_budget = 0
         self._sent_callback = sent_callback
         self._connection_callback = connection_callback
+        self._fht_id_callback = fht_id_callback
+        self._fht_id = None
         self._connection_status = None
         self._connection_error = None
         self._connection_ready = threading.Event()
@@ -51,6 +59,11 @@ class CulIoThread(threading.Thread):
     def cul_version(self):
         """Returns the version reported from the CUL stick"""
         return self._cul_version
+
+    @property
+    def fht_id(self):
+        """Return the FHT ID reported by the CUL."""
+        return self._fht_id
 
     @property
     def connection_error(self):
@@ -139,6 +152,10 @@ class CulIoThread(threading.Thread):
                 LOGGER.debug(
                     "Received new moritz message: %s", line)
                 self.read_queue.put(line)
+            elif FHT_ID_PATTERN.fullmatch(line):
+                self._fht_id = line.upper()
+                if self._fht_id_callback is not None:
+                    self._fht_id_callback(self._fht_id)
             else:
                 LOGGER.debug("Got unhandled response from CUL: '%s'", line)
         return line is not None

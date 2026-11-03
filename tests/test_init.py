@@ -22,6 +22,7 @@ from custom_components.maxcul import (
 from custom_components.maxcul._vendor.pymaxcul import (
     EVENT_DEVICE_PAIRED,
     EVENT_DEVICE_REPAIRED,
+    EVENT_FHT_ID_UPDATE,
 )
 
 from custom_components.maxcul._vendor.pymaxcul._const import (
@@ -121,6 +122,29 @@ async def test_setup_entry(hass):
     await hass.async_block_till_done()
 
     assert hass.data.get('entity_registry').entities.get('climate.thermostat1')
+
+
+async def test_fht_id_response_creates_sensor_and_home_matic_id(
+    hass: HomeAssistant,
+    max_connection_factory: MockConnectionFactory,
+) -> None:
+    config = {
+        CONF_DEVICE_PATH: "/dev/tty0",
+        CONF_DEVICES: {},
+    }
+    config_entry = MockConfigEntry(domain=DOMAIN, data=config, entry_id="test")
+    assert await async_setup_entry(hass, config_entry)
+    await hass.async_block_till_done()
+
+    connection = max_connection_factory.connections[config[CONF_DEVICE_PATH]]
+    connection.call_callback(EVENT_FHT_ID_UPDATE, {"fht_id": "1034"})
+    await hass.async_block_till_done()
+
+    sensor_ids = hass.states.async_entity_ids("sensor")
+    assert len(sensor_ids) == 1
+    state = hass.states.get(sensor_ids[0])
+    assert state.state == "1034"
+    assert state.attributes["homematic_id"] == "F11034"
 
 
 @pytest.mark.parametrize(

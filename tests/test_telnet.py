@@ -102,6 +102,19 @@ def test_io_thread_returns_line_after_reconnecting() -> None:
     assert io_thread._readline() == "Zmessage"
 
 
+@pytest.mark.parametrize("fht_id", ["1034", "0000"])
+def test_io_thread_reports_fht_id_response(fht_id: str) -> None:
+    io_thread = _io.CulIoThread.__new__(_io.CulIoThread)
+    io_thread._fht_id = None
+    io_thread._fht_id_callback = lambda value: received.append(value)
+    io_thread._readline = lambda: fht_id
+    received = []
+
+    assert io_thread._receive_message()
+    assert io_thread.fht_id == fht_id
+    assert received == [fht_id]
+
+
 def test_io_thread_closes_connection_when_stopped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

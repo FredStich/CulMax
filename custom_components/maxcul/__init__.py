@@ -32,6 +32,7 @@ from homeassistant.helpers.typing import ConfigType
 from ._vendor.pymaxcul import (
     EVENT_DEVICE_PAIRED,
     EVENT_DEVICE_REPAIRED,
+    EVENT_FHT_ID_UPDATE,
     EVENT_PUSH_BUTTON_UPDATE,
     EVENT_SHUTTER_UPDATE,
     EVENT_THERMOSTAT_UPDATE,
@@ -67,7 +68,7 @@ LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "maxcul"
 
-PLATFORMS = ["climate", "binary_sensor", "switch"]
+PLATFORMS = ["climate", "binary_sensor", "switch", "sensor"]
 CONNECTION_STARTUP_TIMEOUT = 20
 
 CONF_DEVICE_PATH = "device_path"
@@ -117,6 +118,7 @@ SIGNAL_THERMOSTAT_UPDATE = f"{DOMAIN}.thermostat_update"
 SIGNAL_SHUTTER_UPDATE = f"{DOMAIN}.shutter_update"
 SIGNAL_PUSH_BUTTON_UPDATE = f"{DOMAIN}.push_button_update"
 SIGNAL_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
+SIGNAL_FHT_ID_UPDATE = f"{DOMAIN}.fht_id_update"
 EVENT_WEEK_PROFILE_UPDATE = f"{DOMAIN}.week_profile_update"
 
 ATTR_CONNECTION_DEVICE_PATH = "connection_device_path"
@@ -776,6 +778,11 @@ class MaxCulConnection:
         """Return the last reason the CUL could not be reached."""
         return self._connection_error
 
+    @property
+    def fht_id(self) -> str | None:
+        """Return the FHT ID reported by the CUL."""
+        return self._connection.fht_id
+
     def wait_for_initial_connection(self, timeout: float) -> bool:
         """Wait for the first CUL reachability result."""
         if not self._connection_ready.wait(timeout):
@@ -858,6 +865,10 @@ class MaxCulConnection:
 
         elif event == EVENT_PUSH_BUTTON_UPDATE:
             dispatcher_send(self._hass, SIGNAL_PUSH_BUTTON_UPDATE, payload)
+
+        elif event == EVENT_FHT_ID_UPDATE:
+            payload[ATTR_CONNECTION_DEVICE_PATH] = self._device_path
+            dispatcher_send(self._hass, SIGNAL_FHT_ID_UPDATE, payload)
 
         elif event == EVENT_WEEK_PROFILE_UPDATE:
             payload[ATTR_CONNECTION_DEVICE_PATH] = self._device_path

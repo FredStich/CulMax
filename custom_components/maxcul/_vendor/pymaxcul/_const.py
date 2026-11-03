@@ -71,6 +71,7 @@ EVENT_SHUTTER_UPDATE = 'shutter_update'
 EVENT_PUSH_BUTTON_UPDATE = 'push_button_update'
 EVENT_DEVICE_PAIRED = 'device_paired'
 EVENT_DEVICE_REPAIRED = 'device_repaired'
+EVENT_FHT_ID_UPDATE = 'fht_id_update'
 
 ATTR_DEVICE_ID = 'device_id'
 ATTR_DESIRED_TEMPERATURE = 'desired_temperature'

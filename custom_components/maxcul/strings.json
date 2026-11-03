@@ -124,6 +124,11 @@
       "plug_adapter": {
         "name": "Plug Adapter"
       }
+    },
+    "sensor": {
+      "fht_id": {
+        "name": "FHT ID"
+      }
     }
   }
 }

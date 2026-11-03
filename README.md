@@ -91,7 +91,9 @@ After setup, pair MAX! devices with the CUL. The integration creates climate
 entities for thermostat models, including wall thermostat variants, window
 sensors for shutter contacts, a state sensor for the MAX! Eco Taster, and an
 outlet switch for the MAX! Plug Adapter. Battery sensors are also created for
-paired devices.
+paired devices. A diagnostic **FHT ID** sensor reports the four-digit ID returned
+by the CUL; its `homematic_id` attribute shows the default HomeMatic ID derived
+from that value (for example, `1034` becomes `F11034`).
 
 ### What the integration provides
 
@@ -133,11 +135,12 @@ flowchart LR
 
     Devices -->|thermostat, contact, and device events| PyMaxCUL
     PyMaxCUL -->|callback| Connection
-    Connection -->|Home Assistant dispatcher| Platforms["Climate, binary_sensor, and switch platforms"]
+    Connection -->|Home Assistant dispatcher| Platforms["Climate, binary_sensor, switch, and sensor platforms"]
     Platforms --> Thermostat["Thermostat climate entities (incl. wall thermostat+)"]
     Platforms --> Shutter["Shutter window sensors"]
     Platforms --> EcoTaster["Eco Taster state sensor"]
     Platforms --> Battery["Battery sensors"]
+    Platforms --> FHTID["CUL FHT ID sensor"]
     Thermostat -->|temperature, mode and week profile commands| Connection
     Platforms --> PlugAdapter["Plug Adapter outlet switch"]
     PlugAdapter -->|on/off commands| Connection
@@ -159,7 +162,7 @@ flowchart TD
     Retry --> Choose
     Probe -->|Responds| Create["Create config entry"]
     Create --> StartConnection["Start CulMax connection"]
-    StartConnection --> Load["Load climate, binary sensor, and switch platforms"]
+    StartConnection --> Load["Load climate, binary sensor, switch, and sensor platforms"]
     Load --> Known{"Known paired devices?"}
     Known -->|Yes| Restore["Restore their entities"]
     Known -->|No| PairService

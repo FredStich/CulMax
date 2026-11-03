@@ -18,6 +18,7 @@ from ._const import (
     EVENT_THERMOSTAT_UPDATE,
     EVENT_SHUTTER_UPDATE,
     EVENT_PUSH_BUTTON_UPDATE,
+    EVENT_FHT_ID_UPDATE,
     # Thermostat modes
     MODE_AUTO, MODE_BOOST, MODE_MANUAL, MODE_TEMPORARY,
     # Temperature constants
