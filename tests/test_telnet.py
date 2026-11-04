@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import socket
 
 import pytest
@@ -102,6 +103,33 @@ def test_io_thread_returns_line_after_reconnecting() -> None:
     assert io_thread._readline() == "Zmessage"
 
 
+@pytest.mark.parametrize(
+    ("command", "description"),
+    [
+        ("VH", "query CUL hardware revision"),
+        ("X21", "enable signal-strength reporting"),
+        ("Zr", "enable Moritz-message reception"),
+        ("T01", "disable FHT mode (station ID 0000)"),
+    ],
+)
+def test_io_thread_logs_cul_initialization_command_descriptions(
+    caplog: pytest.LogCaptureFixture,
+    command: str,
+    description: str,
+) -> None:
+    class WritablePort:
+        def write(self, _data: bytes) -> None:
+            pass
+
+    io_thread = _io.CulIoThread.__new__(_io.CulIoThread)
+    io_thread._com_port = WritablePort()
+
+    with caplog.at_level(logging.DEBUG, logger=_io.__name__):
+        io_thread._writeline(command)
+
+    assert f"Writing command {command} ({description})" in caplog.text
+
+
 def test_io_thread_reads_hardware_revision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -181,7 +209,9 @@ def test_paired_devices_use_unique_membership_entries() -> None:
     assert connection._paired_devices == {123, 456}
 
 
-def test_wall_thermostat_control_message_is_acknowledged() -> None:
+def test_wall_thermostat_control_message_logs_signal_strength_and_is_acknowledged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     device_id = 0x6A285
     connection = _communication.MaxConnection(paired_devices=[device_id])
     acknowledgements = []
@@ -192,6 +222,8 @@ def test_wall_thermostat_control_message_is_acknowledged() -> None:
         temperature=23.4,
     )
 
-    connection._handle_message(message, 242)
+    with caplog.at_level(logging.DEBUG, logger=_communication.__name__):
+        connection._handle_message(message, 242)
 
     assert acknowledgements == [message]
+    assert "RSSI: -81.0 dBm" in caplog.text

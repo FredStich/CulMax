@@ -200,7 +200,7 @@
         "name": "FHT-ID"
       },
       "cul_firmware_update": {
-        "name": "CUL-Firmware-Update-Status"
+        "name": "CUL-Firmware"
       }
     }
   }

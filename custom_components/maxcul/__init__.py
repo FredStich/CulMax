@@ -661,10 +661,7 @@ async def async_setup_entry(
             identifier_domain == DOMAIN and device_id not in known_device_ids
             for identifier_domain, device_id in device_entry.identifiers
         ):
-            device_registry.async_update_device(
-                device_entry.id,
-                remove_config_entry_id=config_entry.entry_id,
-            )
+            device_registry.async_remove_device(device_entry.id)
 
     try:
         await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
@@ -946,7 +943,7 @@ class MaxCulConnection:
 
     def add_paired_device(self, device_id: int) -> None:
         """Add a device id to the paired devices."""
-        LOGGER.debug("Adding device %s", device_id)
+        LOGGER.debug("Adding device %s (0x%x)", device_id, device_id)
         self._connection.add_paired_device(device_id)
 
     def set_temperature(
