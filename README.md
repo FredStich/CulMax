@@ -482,11 +482,21 @@ data:
 
 The **CUL radio address** option defaults to `0x123456` (`1193046`, entered as
 decimal in the options form). Change it only when you need to assign a
-different 24-bit radio address to the CUL. To correct a device shown as the
-wrong kind of entity, open the CulMax options and choose **Fix a device shown
-as the wrong type**. Select the device, then select what it physically is.
-CulMax reloads and moves that device to the appropriate platform. Choose
-**Use the device type detected by CulMax** to undo the correction.
+different 24-bit radio address to the CUL.
+
+If a MAX! Plug Adapter is detected as a thermostat, or another device appears
+as the wrong kind of entity, correct its type in the integration options:
+
+1. Open CulMax under **Settings → Devices & services** and choose **Configure**.
+2. Select **Fix a device shown as the wrong type**.
+3. Select the device and choose its physical type, such as **Plug Adapter
+   (socket switch)**.
+
+CulMax reloads and moves the device to the appropriate platform. For example,
+a Plug Adapter corrected to **Plug Adapter** appears as an outlet switch
+instead of a climate entity. This changes how CulMax presents the device in
+Home Assistant; it does not change the type announced over the MAX! radio.
+Choose **Use the device type detected by CulMax** to remove the override.
 
 ## Inspecting entities
 
