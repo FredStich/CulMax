@@ -122,6 +122,42 @@ from that value (for example, `1034` becomes `F11034`).
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
 
+Use `maxcul.associate` or `maxcul.deassociate` with one thermostat/contact
+pair, multiple selected thermostats and contacts, or a Home Assistant area.
+Multi-device and area selections apply every possible thermostat-to-contact
+pair, so the devices in one room can share all their window contacts. Area
+selection uses each entity's assigned area, falling back to its device area.
+
+### Link window contacts to thermostats
+
+For room-based linking:
+
+1. In **Settings → Areas, labels & zones → Areas**, create or choose the room.
+2. Assign every thermostat and window-contact device in that room to the area.
+   You can assign an area to an entity or to its device in Home Assistant.
+3. Open **Developer Tools → Actions**, choose `maxcul.associate`, and select
+   the room in **Room or area**. Run the action to link every supported CulMax
+   thermostat in that area to every supported CulMax window contact there.
+4. Open or close each window once to wake its contact and apply the new link.
+   Do not press the pairing button on the back of the contact.
+
+You can instead choose one thermostat and one contact, or select multiple
+thermostats and contacts in the action. With multiple selections, every
+selected thermostat is linked to every selected contact. To remove links, use
+`maxcul.deassociate` with the same pair, selections, or area. Both devices must
+be paired with CulMax and available on the same loaded CUL connection. If you
+have multiple CUL connections, select the optional **CUL connection** to limit
+which connection is changed.
+
+For automations or scripts, an area action can be called by its Home Assistant
+area ID:
+
+```yaml
+action: maxcul.associate
+data:
+  area_id: living_room
+```
+
 The integration is local-push: entity updates arrive when the CUL receives a
 MAX! radio message. It does not poll devices on a fixed interval, and values
 such as current temperature or valve position may be unknown until the next

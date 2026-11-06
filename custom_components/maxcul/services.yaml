@@ -68,18 +68,30 @@ set_week_profile:
           multiline: true
 
 associate:
-  name: Link a thermostat to a window contact
+  name: Link thermostats to window contacts
   description: >-
-    Make the thermostat lower its temperature when this window is open. Choose
-    the thermostat and its window contact, then call this service. Afterward,
-    open or close the window once so the contact wakes up. Do not press the
-    pairing button on the back of the contact.
+    Make the thermostats lower their temperature when a linked window is open.
+    Select one thermostat and one contact, select multiple of each, or choose
+    an area to link every supported thermostat and contact assigned there.
+    Multi-device and area selections link every thermostat to every selected
+    contact. Afterward, open or close each window once so the contacts wake up.
+    Do not press the pairing button on the back of a contact.
   fields:
     thermostat_id:
       name: Thermostat
       description: Choose the thermostat in the room with this window.
       selector:
         entity:
+          filter:
+            domain: climate
+            device:
+              integration: maxcul
+    thermostat_ids:
+      name: Thermostats
+      description: Choose the thermostats to link to all selected contacts.
+      selector:
+        entity:
+          multiple: true
           filter:
             domain: climate
             device:
@@ -94,6 +106,22 @@ associate:
             device_class: window
             device:
               integration: maxcul
+    window_contact_ids:
+      name: Window or door contacts
+      description: Choose the contacts to link to all selected thermostats.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: binary_sensor
+            device_class: window
+            device:
+              integration: maxcul
+    area_id:
+      name: Room or area
+      description: Link every supported thermostat and contact assigned to this area.
+      selector:
+        area: {}
     device_path:
       name: CUL connection (optional)
       description: >-
@@ -104,18 +132,30 @@ associate:
         text:
 
 deassociate:
-  name: Unlink a thermostat and window contact
+  name: Unlink thermostats and window contacts
   description: >-
-    Stop this window contact from changing the thermostat's temperature.
-    Choose the thermostat and contact that are currently linked. If the change
-    does not take effect immediately, open or close the window once to wake the
-    contact.
+    Stop linked window contacts from changing thermostat temperatures. Select
+    one thermostat and one contact, select multiple of each, or choose an area
+    to unlink every supported thermostat and contact assigned there. Multi-
+    device and area selections unlink every thermostat from every selected
+    contact. If a change does not take effect immediately, open or close the
+    window once to wake the contact.
   fields:
     thermostat_id:
       name: Thermostat
       description: Choose the thermostat that is currently linked to the contact.
       selector:
         entity:
+          filter:
+            domain: climate
+            device:
+              integration: maxcul
+    thermostat_ids:
+      name: Thermostats
+      description: Choose the thermostats to unlink from all selected contacts.
+      selector:
+        entity:
+          multiple: true
           filter:
             domain: climate
             device:
@@ -130,6 +170,22 @@ deassociate:
             device_class: window
             device:
               integration: maxcul
+    window_contact_ids:
+      name: Window or door contacts
+      description: Choose the contacts to unlink from all selected thermostats.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: binary_sensor
+            device_class: window
+            device:
+              integration: maxcul
+    area_id:
+      name: Room or area
+      description: Unlink every supported thermostat and contact assigned to this area.
+      selector:
+        area: {}
     device_path:
       name: CUL connection (optional)
       description: >-
