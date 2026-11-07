@@ -11,7 +11,6 @@ from homeassistant.components.climate.const import (
     PRESET_BOOST,
     PRESET_NONE,
 )
-from homeassistant.components.maxcube.climate import ATTR_VALVE_POSITION
 from homeassistant.const import ATTR_MODE, ATTR_TEMPERATURE, UnitOfTemperature
 
 from homeassistant.core import callback
@@ -19,7 +18,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import DeviceInfo
 
-from ._vendor.pymaxcul._const import ATTR_DEVICE_ID
+from ._vendor.pymaxcul._const import ATTR_DEVICE_ID, ATTR_VALVE_POSITION
 from ._vendor.pymaxcul import (
     ATTR_DESIRED_TEMPERATURE,
     ATTR_MEASURED_TEMPERATURE,
