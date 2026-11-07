@@ -96,7 +96,7 @@
     },
     "serial_device": {
       "options": {
-        "Enter manually": "My CUL is not listed - enter its path"
+        "enter-manually": "My CUL is not listed - enter its path"
       }
     },
     "device_type_override": {

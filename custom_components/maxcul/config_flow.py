@@ -52,7 +52,7 @@ from ._vendor.pymaxcul._telnet import TelnetSerial
 
 LOGGER = logging.getLogger(__name__)
 
-CONF_MANUAL_PATH = "Enter manually"
+CONF_MANUAL_PATH = "enter-manually"
 CONF_DEVICE_TYPE = "device_type"
 CONF_OVERRIDE_DEVICE = "override_device"
 CONF_OVERRIDE_TYPE = "override_type"

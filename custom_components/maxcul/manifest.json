@@ -6,7 +6,6 @@
   "issue_tracker": "https://github.com/FredStich/CulMax/issues",
   "codeowners": [ "@FredStich" ],
   "config_flow": true,
-  "icon": "mdi:radio-tower",
-  "requirements": ["pyserial>=3.1.1"],
+  "dependencies": ["http", "maxcube", "usb"],
   "iot_class": "local_push"
 }

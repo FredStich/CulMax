@@ -96,7 +96,7 @@
     },
     "serial_device": {
       "options": {
-        "Enter manually": "Mein CUL wird nicht angezeigt – Pfad manuell eingeben"
+        "enter-manually": "Mein CUL wird nicht angezeigt – Pfad manuell eingeben"
       }
     },
     "device_type_override": {
