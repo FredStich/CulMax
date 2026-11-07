@@ -90,7 +90,7 @@
   "selector": {
     "connection_type": {
       "options": {
-        "serial port": "Direkt am Home-Assistant-Server angeschlossen",
+        "serial-port": "Direkt am Home-Assistant-Server angeschlossen",
         "network": "An einem anderen Gerät angeschlossen (Netzwerk/Telnet)"
       }
     },

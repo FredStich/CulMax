@@ -90,7 +90,7 @@
   "selector": {
     "connection_type": {
       "options": {
-        "serial port": "Plugged into the Home Assistant server",
+        "serial-port": "Plugged into the Home Assistant server",
         "network": "Connected to another device (network/Telnet)"
       }
     },

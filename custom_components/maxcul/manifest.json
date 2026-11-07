@@ -1,8 +1,8 @@
 {
   "domain": "maxcul",
   "name": "CulMax",
-  "config_flow": true,
   "codeowners": [ "@FredStich" ],
+  "config_flow": true,
   "dependencies": ["http", "maxcube", "usb"],
   "documentation": "https://github.com/FredStich/CulMax",
   "iot_class": "local_push",

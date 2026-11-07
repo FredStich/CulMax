@@ -53,6 +53,7 @@ from ._vendor.pymaxcul._telnet import TelnetSerial
 LOGGER = logging.getLogger(__name__)
 
 CONF_MANUAL_PATH = "enter-manually"
+CONF_SERIAL_PORT = "serial-port"
 CONF_DEVICE_TYPE = "device_type"
 CONF_OVERRIDE_DEVICE = "override_device"
 CONF_OVERRIDE_TYPE = "override_type"
@@ -87,7 +88,7 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
             self._com_ports = []
 
         if user_input is not None:
-            if user_input[CONF_DEVICE_TYPE] == "serial port":
+            if user_input[CONF_DEVICE_TYPE] == CONF_SERIAL_PORT:
                 return await self.async_step_device_picker()
             return await self.async_step_pick_host()
 
@@ -95,7 +96,7 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_DEVICE_TYPE): SelectSelector(
                     SelectSelectorConfig(
-                        options=["serial port", "network"],
+                        options=[CONF_SERIAL_PORT, "network"],
                         translation_key="connection_type",
                         mode=SelectSelectorMode.LIST,
                     )
