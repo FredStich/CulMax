@@ -101,13 +101,13 @@
     },
     "device_type_override": {
       "options": {
-        "HeatingThermostat": "Heizkörperthermostat",
-        "HeatingThermostatPlus": "Heizkörperthermostat Plus",
-        "WallMountedThermostat": "Wandthermostat",
-        "ShutterContact": "Fensterkontakt",
-        "PushButton": "Eco-Taster",
-        "PlugAdapter": "Plug Adapter (Steckdosenschalter)",
-        "__reported__": "Automatisch erkannten Gerätetyp verwenden"
+        "heating-thermostat": "Heizkörperthermostat",
+        "heating-thermostat-plus": "Heizkörperthermostat Plus",
+        "wall-mounted-thermostat": "Wandthermostat",
+        "shutter-contact": "Fensterkontakt",
+        "push-button": "Eco-Taster",
+        "plug-adapter": "Plug Adapter (Steckdosenschalter)",
+        "reported": "Automatisch erkannten Gerätetyp verwenden"
       }
     }
   },

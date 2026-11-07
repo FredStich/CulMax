@@ -101,13 +101,13 @@
     },
     "device_type_override": {
       "options": {
-        "HeatingThermostat": "Heating thermostat",
-        "HeatingThermostatPlus": "Heating thermostat Plus",
-        "WallMountedThermostat": "Wall-mounted thermostat",
-        "ShutterContact": "Window contact",
-        "PushButton": "Eco Taster",
-        "PlugAdapter": "Plug Adapter (socket switch)",
-        "__reported__": "Use the device type detected by CulMax"
+        "heating-thermostat": "Heating thermostat",
+        "heating-thermostat-plus": "Heating thermostat Plus",
+        "wall-mounted-thermostat": "Wall-mounted thermostat",
+        "shutter-contact": "Window contact",
+        "push-button": "Eco Taster",
+        "plug-adapter": "Plug Adapter (socket switch)",
+        "reported": "Use the device type detected by CulMax"
       }
     }
   },

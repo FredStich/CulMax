@@ -57,7 +57,7 @@ async def test_options_flow_saves_and_clears_device_type_override(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            config_flow.CONF_OVERRIDE_TYPE: PLUG_ADAPTER,
+            config_flow.CONF_OVERRIDE_TYPE: "plug-adapter",
         },
     )
     assert result["type"] == "create_entry"

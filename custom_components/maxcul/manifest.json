@@ -1,11 +1,11 @@
 {
   "domain": "maxcul",
   "name": "CulMax",
-  "version": "0.3.0",
-  "documentation": "https://github.com/FredStich/CulMax",
-  "issue_tracker": "https://github.com/FredStich/CulMax/issues",
-  "codeowners": [ "@FredStich" ],
   "config_flow": true,
+  "codeowners": [ "@FredStich" ],
   "dependencies": ["http", "maxcube", "usb"],
-  "iot_class": "local_push"
+  "documentation": "https://github.com/FredStich/CulMax",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/FredStich/CulMax/issues",
+  "version": "0.3.0"
 }

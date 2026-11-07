@@ -56,16 +56,16 @@ CONF_MANUAL_PATH = "enter-manually"
 CONF_DEVICE_TYPE = "device_type"
 CONF_OVERRIDE_DEVICE = "override_device"
 CONF_OVERRIDE_TYPE = "override_type"
-USE_REPORTED_DEVICE_TYPE = "__reported__"
+USE_REPORTED_DEVICE_TYPE = "reported"
 
-_OVERRIDE_DEVICE_TYPES = (
-    HEATING_THERMOSTAT,
-    HEATING_THERMOSTAT_PLUS,
-    WALL_MOUNTED_THERMOSTAT,
-    SHUTTER_CONTACT,
-    PUSH_BUTTON,
-    PLUG_ADAPTER,
-)
+_OVERRIDE_DEVICE_TYPES = {
+    "heating-thermostat": HEATING_THERMOSTAT,
+    "heating-thermostat-plus": HEATING_THERMOSTAT_PLUS,
+    "wall-mounted-thermostat": WALL_MOUNTED_THERMOSTAT,
+    "shutter-contact": SHUTTER_CONTACT,
+    "push-button": PUSH_BUTTON,
+    "plug-adapter": PLUG_ADAPTER,
+}
 
 
 class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -395,7 +395,7 @@ class MaxculOptionsFlowHandler(OptionsFlow):
             if device_type == USE_REPORTED_DEVICE_TYPE:
                 overrides.pop(device_id, None)
             else:
-                overrides[device_id] = device_type
+                overrides[device_id] = _OVERRIDE_DEVICE_TYPES[device_type]
             options[CONF_DEVICE_TYPE_OVERRIDES] = overrides
             return self.async_create_entry(title="", data=options)
 
