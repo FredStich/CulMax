@@ -120,43 +120,6 @@ from that value (for example, `1034` becomes `F11034`).
 | MAX! plug adapter | Outlet switch with reported state and on/off control |
 | CUL V3 running a-culfw | Diagnostic firmware version sensor and Busware updater link |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
-| Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
-
-Use `maxcul.associate` or `maxcul.deassociate` with one thermostat/contact
-pair, multiple selected thermostats and contacts, or a Home Assistant area.
-Multi-device and area selections apply every possible thermostat-to-contact
-pair, so the devices in one room can share all their window contacts. Area
-selection uses each entity's assigned area, falling back to its device area.
-
-### Link window contacts to thermostats
-
-For room-based linking:
-
-1. In **Settings → Areas, labels & zones → Areas**, create or choose the room.
-2. Assign every thermostat and window-contact device in that room to the area.
-   You can assign an area to an entity or to its device in Home Assistant.
-3. Open **Developer Tools → Actions**, choose `maxcul.associate`, and select
-   the room in **Room or area**. Run the action to link every supported CulMax
-   thermostat in that area to every supported CulMax window contact there.
-4. Open or close each window once to wake its contact and apply the new link.
-   Do not press the pairing button on the back of the contact.
-
-You can instead choose one thermostat and one contact, or select multiple
-thermostats and contacts in the action. With multiple selections, every
-selected thermostat is linked to every selected contact. To remove links, use
-`maxcul.deassociate` with the same pair, selections, or area. Both devices must
-be paired with CulMax and available on the same loaded CUL connection. If you
-have multiple CUL connections, select the optional **CUL connection** to limit
-which connection is changed.
-
-For automations or scripts, an area action can be called by its Home Assistant
-area ID:
-
-```yaml
-action: maxcul.associate
-data:
-  area_id: living_room
-```
 
 The integration is local-push: entity updates arrive when the CUL receives a
 MAX! radio message. It does not poll devices on a fixed interval, and values
@@ -482,32 +445,32 @@ If Home Assistant or the browser keeps a previous JavaScript copy after an
 update, change the resource URL to `/maxcul/week-profile-card.js?v=2` and
 reload the dashboard. Increase the version number on future updates.
 
-## Associate a window contact with a thermostat
+## Associate and deassociate window contacts
 
-Call `maxcul.associate` to create the MAX! link in both directions. Both devices
-must be paired to the same loaded CUL connection. In the service dialog, select
-the thermostat and window contact from the entity dropdowns. YAML calls may
-also use their entity IDs, saved friendly names, or hexadecimal addresses shown
-in the `maxcul._communication` debug log (for example, `67e2e`). Names must
-identify each device uniquely; use hexadecimal addresses and `device_path` if
-there are duplicates.
+Use `maxcul.associate` to link a thermostat and window contact in both
+directions, so an open window lowers the thermostat temperature. Use
+`maxcul.deassociate` to remove that link. Both devices must be paired with
+CulMax and available on the same loaded CUL connection.
+
+Each action accepts one thermostat/contact pair, lists of both device types, or
+a Home Assistant area. With lists or an area, CulMax links or unlinks every
+thermostat with every selected contact. Area selection includes devices whose
+entity is assigned to the area, falling back to the device's area.
+
+### Link or unlink one pair
+
+In **Developer Tools → Actions**, choose `maxcul.associate` or
+`maxcul.deassociate` and select one thermostat and one window contact. For
+YAML calls, use their entity IDs, saved friendly names, or hexadecimal
+addresses shown in the `maxcul._communication` debug log (for example,
+`67e2e`). Names must identify each device uniquely.
 
 ```yaml
 action: maxcul.associate
 data:
   thermostat_id: climate.living_room
   window_contact_id: binary_sensor.kitchen_window
-  device_path: "/dev/ttyUSB0"
 ```
-
-The thermostat does not need to be put into pairing mode: the service sends
-the link commands to both devices. After calling it, open or close the window
-to trigger the contact's reed relay and wake it so it can receive its link
-command. Do **not** press the pairing button on the back of the contact. The
-connection retries the command while waiting for an acknowledgement.
-
-To remove both links, call `maxcul.deassociate` with the same device fields.
-The contact may need a window state change to wake and receive the command:
 
 ```yaml
 action: maxcul.deassociate
@@ -515,6 +478,49 @@ data:
   thermostat_id: climate.living_room
   window_contact_id: binary_sensor.kitchen_window
 ```
+
+### Link or unlink multiple devices
+
+Provide both lists to link or unlink every selected thermostat/contact
+combination:
+
+```yaml
+action: maxcul.associate
+data:
+  thermostat_ids:
+    - climate.living_room
+    - climate.bedroom
+  window_contact_ids:
+    - binary_sensor.kitchen_window
+    - binary_sensor.bedroom_window
+```
+
+Replace `maxcul.associate` with `maxcul.deassociate` to remove those links.
+
+### Link or unlink a room
+
+In **Settings → Areas, labels & zones → Areas**, create or choose the room and
+assign its thermostat and window-contact entities or devices to that area. Then
+choose the area in the **Room or area** field of either action. In automations
+or scripts, use the Home Assistant area ID:
+
+```yaml
+action: maxcul.associate
+data:
+  area_id: living_room
+```
+
+Use `maxcul.deassociate` instead to remove the links for that area.
+
+If multiple CUL connections are loaded, set the optional `device_path` field to
+limit the action to a specific connection (for example, `"/dev/ttyUSB0"`).
+Without it, selected devices still need to resolve to the same loaded
+connection.
+
+The thermostat does not need to be put into pairing mode. After associating,
+open or close each window once to wake its contact and apply the link. A
+contact may also need a window state change to wake and receive a deassociation
+command. Do **not** press the pairing button on the back of the contact.
 
 ## Options
 
