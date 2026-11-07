@@ -6,6 +6,8 @@ import pytest
 
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -225,3 +227,149 @@ async def test_association_service_accepts_selected_entities(
     )
 
     assert calls == [(425518, HEATING_THERMOSTAT, 67890, True)]
+
+
+async def test_association_service_links_multiple_selected_entities(
+    hass,
+    max_connection_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="association-multiple",
+        data={
+            CONF_DEVICE_PATH: "/dev/tty0",
+            CONF_DEVICES: {
+                "425518": {
+                    CONF_NAME: "Thermostat 1",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+                "425519": {
+                    CONF_NAME: "Thermostat 2",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+                "67890": {
+                    CONF_NAME: "Contact 1",
+                    CONF_TYPE: SHUTTER_CONTACT,
+                },
+                "67891": {
+                    CONF_NAME: "Contact 2",
+                    CONF_TYPE: SHUTTER_CONTACT,
+                },
+            },
+        },
+    )
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entity_registry = er.async_get(hass)
+    thermostat_entities = [
+        entity.entity_id
+        for entity in entity_registry.entities.values()
+        if entity.platform == DOMAIN
+        and entity.entity_id.startswith("climate.")
+    ]
+    contact_entities = [
+        entity.entity_id
+        for entity in entity_registry.entities.values()
+        if entity.platform == DOMAIN
+        and entity.entity_id.startswith("binary_sensor.")
+        and entity.unique_id in {"67890", "67891"}
+    ]
+    connection = max_connection_factory.connections["/dev/tty0"]
+    calls = []
+    monkeypatch.setattr(
+        connection,
+        "set_device_association",
+        lambda thermostat_id, thermostat_type, window_contact_id, *, associate: calls.append(
+            (thermostat_id, thermostat_type, window_contact_id, associate)
+        ),
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ASSOCIATE,
+        {
+            "thermostat_ids": thermostat_entities,
+            "window_contact_ids": contact_entities,
+        },
+        blocking=True,
+    )
+
+    assert len(calls) == 4
+    assert set(calls) == {
+        (425518, HEATING_THERMOSTAT, 67890, True),
+        (425518, HEATING_THERMOSTAT, 67891, True),
+        (425519, HEATING_THERMOSTAT, 67890, True),
+        (425519, HEATING_THERMOSTAT, 67891, True),
+    }
+
+
+async def test_association_service_links_all_supported_devices_in_area(
+    hass,
+    max_connection_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="association-area",
+        data={
+            CONF_DEVICE_PATH: "/dev/tty0",
+            CONF_DEVICES: {
+                "425518": {
+                    CONF_NAME: "Thermostat 1",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+                "425519": {
+                    CONF_NAME: "Thermostat 2",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+                "67890": {
+                    CONF_NAME: "Contact 1",
+                    CONF_TYPE: SHUTTER_CONTACT,
+                },
+                "67891": {
+                    CONF_NAME: "Contact 2",
+                    CONF_TYPE: SHUTTER_CONTACT,
+                },
+            },
+        },
+    )
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    room = ar.async_get(hass).async_create("Living Room")
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+    for entity in entity_registry.entities.values():
+        if entity.platform == DOMAIN and entity.device_id is not None:
+            device_registry.async_update_device(
+                entity.device_id, area_id=room.id
+            )
+
+    connection = max_connection_factory.connections["/dev/tty0"]
+    calls = []
+    monkeypatch.setattr(
+        connection,
+        "set_device_association",
+        lambda thermostat_id, thermostat_type, window_contact_id, *, associate: calls.append(
+            (thermostat_id, thermostat_type, window_contact_id, associate)
+        ),
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_ASSOCIATE,
+        {"area_id": room.id},
+        blocking=True,
+    )
+
+    assert len(calls) == 4
+    assert set(calls) == {
+        (425518, HEATING_THERMOSTAT, 67890, True),
+        (425518, HEATING_THERMOSTAT, 67891, True),
+        (425519, HEATING_THERMOSTAT, 67890, True),
+        (425519, HEATING_THERMOSTAT, 67891, True),
+    }

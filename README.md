@@ -24,10 +24,12 @@ over USB/serial or a network telnet connection.
   default HomeMatic ID derived from that value (for example, `1034` becomes
   `F11034`). An FHT ID of `0000` means FHT communication is disabled.
 - **CUL V3 firmware checker:** CulMax checks identified a-culfw CUL V3 devices
-  for available firmware updates. If an update is available, open the
-  `update_url` attribute on the diagnostic status sensor in a browser with
-  direct USB access to the CUL. The Busware updater requires a supported
-  browser such as Chrome or Edge; CulMax does not flash firmware itself.
+  for available firmware updates. The diagnostic **CUL firmware** sensor
+  reports the installed firmware version; its `update_status` and
+  `update_available` attributes show whether an update is available. If one
+  is available, open the `update_url` attribute in a browser with direct USB
+  access to the CUL. The Busware updater requires a supported browser such as
+  Chrome or Edge; CulMax does not flash firmware itself.
 
 ## Install
 
@@ -116,9 +118,45 @@ from that value (for example, `1034` becomes `F11034`).
 | MAX! shutter contact | Window binary sensor |
 | MAX! eco switch | Binary sensor for its reported on/off state and battery status |
 | MAX! plug adapter | Outlet switch with reported state and on/off control |
-| CUL V3 running a-culfw | Diagnostic firmware update status sensor and Busware updater link |
+| CUL V3 running a-culfw | Diagnostic firmware version sensor and Busware updater link |
 | Week schedule | `maxcul.set_week_profile` service and MAX! week-profile dashboard card |
 | Window-to-thermostat link | `maxcul.associate` and `maxcul.deassociate` services |
+
+Use `maxcul.associate` or `maxcul.deassociate` with one thermostat/contact
+pair, multiple selected thermostats and contacts, or a Home Assistant area.
+Multi-device and area selections apply every possible thermostat-to-contact
+pair, so the devices in one room can share all their window contacts. Area
+selection uses each entity's assigned area, falling back to its device area.
+
+### Link window contacts to thermostats
+
+For room-based linking:
+
+1. In **Settings → Areas, labels & zones → Areas**, create or choose the room.
+2. Assign every thermostat and window-contact device in that room to the area.
+   You can assign an area to an entity or to its device in Home Assistant.
+3. Open **Developer Tools → Actions**, choose `maxcul.associate`, and select
+   the room in **Room or area**. Run the action to link every supported CulMax
+   thermostat in that area to every supported CulMax window contact there.
+4. Open or close each window once to wake its contact and apply the new link.
+   Do not press the pairing button on the back of the contact.
+
+You can instead choose one thermostat and one contact, or select multiple
+thermostats and contacts in the action. With multiple selections, every
+selected thermostat is linked to every selected contact. To remove links, use
+`maxcul.deassociate` with the same pair, selections, or area. Both devices must
+be paired with CulMax and available on the same loaded CUL connection. If you
+have multiple CUL connections, select the optional **CUL connection** to limit
+which connection is changed.
+
+For automations or scripts, an area action can be called by its Home Assistant
+area ID:
+
+```yaml
+action: maxcul.associate
+data:
+  area_id: living_room
+```
 
 The integration is local-push: entity updates arrive when the CUL receives a
 MAX! radio message. It does not poll devices on a fixed interval, and values

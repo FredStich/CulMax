@@ -23,6 +23,7 @@ from homeassistant.exceptions import (
     HomeAssistantError,
     ServiceValidationError,
 )
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -104,12 +105,46 @@ SET_WEEK_PROFILE_SERVICE_SCHEMA = vol.Schema(
         vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
     }
 )
-DEVICE_ASSOCIATION_SERVICE_SCHEMA = vol.Schema(
-    {
-        vol.Required(SERVICE_CONF_THERMOSTAT_ID): cv.string,
-        vol.Required(SERVICE_CONF_WINDOW_CONTACT_ID): cv.string,
-        vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
+
+
+def _validate_association_service_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Require exactly one complete association selection mode."""
+    single_fields = {
+        SERVICE_CONF_THERMOSTAT_ID,
+        SERVICE_CONF_WINDOW_CONTACT_ID,
     }
+    multi_fields = {"thermostat_ids", "window_contact_ids"}
+    present_fields = data.keys()
+    single_selected = single_fields <= present_fields
+    multi_selected = multi_fields <= present_fields
+
+    if bool(single_fields & present_fields) != single_selected:
+        raise vol.Invalid("Both thermostat_id and window_contact_id are required")
+    if bool(multi_fields & present_fields) != multi_selected:
+        raise vol.Invalid("Both thermostat_ids and window_contact_ids are required")
+    if sum((single_selected, multi_selected, "area_id" in present_fields)) != 1:
+        raise vol.Invalid(
+            "Choose one thermostat/contact pair, lists of both, or one area"
+        )
+    return data
+
+
+DEVICE_ASSOCIATION_SERVICE_SCHEMA = vol.Schema(
+    vol.All(
+        {
+            vol.Optional(SERVICE_CONF_THERMOSTAT_ID): cv.string,
+            vol.Optional(SERVICE_CONF_WINDOW_CONTACT_ID): cv.string,
+            vol.Optional("thermostat_ids"): vol.All(
+                cv.ensure_list, [cv.string], vol.Length(min=1)
+            ),
+            vol.Optional("window_contact_ids"): vol.All(
+                cv.ensure_list, [cv.string], vol.Length(min=1)
+            ),
+            vol.Optional("area_id"): cv.string,
+            vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
+        },
+        _validate_association_service_data,
+    )
 )
 
 SIGNAL_DEVICE_PAIRED = f"{DOMAIN}.device_paired"
@@ -436,128 +471,104 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     def _service_change_association(
         service: ServiceCall, *, associate: bool
     ) -> None:
-        thermostat_identifier = service.data[SERVICE_CONF_THERMOSTAT_ID]
-        window_contact_identifier = service.data[SERVICE_CONF_WINDOW_CONTACT_ID]
-        thermostat_entity_id = _resolve_association_entity(
-            hass, thermostat_identifier, "climate"
-        )
-        window_contact_entity_id = _resolve_association_entity(
-            hass, window_contact_identifier, "binary_sensor"
-        )
-        if thermostat_entity_id is not None:
-            thermostat_identifier = thermostat_entity_id
-        if window_contact_entity_id is not None:
-            window_contact_identifier = window_contact_entity_id
-
         service_device_path = service.data.get(SERVICE_CONF_DEVICE_PATH)
         normalized_service_path = (
             normalize_device_path(service_device_path)
             if service_device_path
             else None
         )
+        entries = [
+            entry
+            for entry in hass.config_entries.async_loaded_entries(DOMAIN)
+            if normalized_service_path is None
+            or (
+                entry.data.get(CONF_DEVICE_PATH)
+                and normalize_device_path(entry.data[CONF_DEVICE_PATH])
+                == normalized_service_path
+            )
+        ]
+        associations: list[tuple[MaxCulConfigEntry, int, str, int]] = []
 
-        matching_entries = []
-        unsupported_thermostat = False
-        unsupported_window_contact = False
-        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
-            entry_path = entry.data.get(CONF_DEVICE_PATH)
-            if (
-                normalized_service_path is not None
-                and (
-                    not entry_path
-                    or normalize_device_path(entry_path) != normalized_service_path
+        if "area_id" in service.data:
+            area_id = service.data["area_id"]
+            if ar.async_get(hass).async_get_area(area_id) is None:
+                raise ServiceValidationError(f"Unknown Home Assistant area {area_id}")
+
+            for entry in entries:
+                thermostat_ids = _association_devices_in_area(
+                    hass, entry, area_id, "climate"
                 )
-            ):
-                continue
-
-            known_devices = entry.data.get(CONF_DEVICES) or {}
-            thermostats = _find_paired_device_candidates(
-                known_devices, thermostat_identifier
-            )
-            window_contacts = _find_paired_device_candidates(
-                known_devices, window_contact_identifier
-            )
-            if not thermostats or not window_contacts:
-                continue
-
-            for thermostat_id, thermostat in thermostats:
-                thermostat_protocol_type = _association_thermostat_type(
-                    get_effective_device_type(
-                        entry, thermostat_id, thermostat.get(CONF_TYPE)
-                    )
+                window_contact_ids = _association_devices_in_area(
+                    hass, entry, area_id, "binary_sensor"
                 )
-                if thermostat_protocol_type is None:
-                    unsupported_thermostat = True
-                    continue
-                for window_contact_id, window_contact in window_contacts:
-                    if not _is_window_contact_type(
-                        get_effective_device_type(
-                            entry,
-                            window_contact_id,
-                            window_contact.get(CONF_TYPE),
+                for thermostat_id in thermostat_ids:
+                    for window_contact_id in window_contact_ids:
+                        associations.append(
+                            _resolve_association_pair(
+                                thermostat_id,
+                                window_contact_id,
+                                [entry],
+                            )
                         )
-                    ):
-                        unsupported_window_contact = True
-                        continue
-                    try:
-                        numeric_thermostat_id = int(thermostat_id)
-                        numeric_window_contact_id = int(window_contact_id)
-                    except ValueError as err:
-                        raise ServiceValidationError(
-                            "A paired MAX! device has an invalid stored address"
-                        ) from err
-
-                    if any(
-                        device_id < 1 or device_id > 0xFFFFFF
-                        for device_id in (
-                            numeric_thermostat_id,
-                            numeric_window_contact_id,
-                        )
-                    ):
-                        raise ServiceValidationError(
-                            "MAX! device addresses must be between 000001 and FFFFFF"
-                        )
-                    if numeric_thermostat_id == numeric_window_contact_id:
-                        continue
-                    matching_entries.append(
-                        (
-                            entry,
-                            numeric_thermostat_id,
-                            thermostat_protocol_type,
-                            numeric_window_contact_id,
-                        )
-                    )
-
-        if len(matching_entries) > 1:
-            raise ServiceValidationError(
-                "Device identifiers match multiple paired devices or connections; "
-                "use hexadecimal addresses and specify device_path if needed"
-            )
-        if not matching_entries:
-            if unsupported_thermostat:
+            if not associations:
                 raise ServiceValidationError(
-                    f"{thermostat_identifier} is not a supported heating thermostat"
+                    f"Area {area_id} must contain a supported MAX! thermostat "
+                    "and window contact on the same loaded connection"
                 )
-            if unsupported_window_contact:
-                raise ServiceValidationError(
-                    f"{window_contact_identifier} is not a supported window contact"
+        else:
+            if "thermostat_ids" in service.data:
+                thermostat_identifiers = [
+                    _resolve_selected_association_entity(hass, entity_id, "climate")
+                    for entity_id in service.data["thermostat_ids"]
+                ]
+                window_contact_identifiers = [
+                    _resolve_selected_association_entity(
+                        hass, entity_id, "binary_sensor"
+                    )
+                    for entity_id in service.data["window_contact_ids"]
+                ]
+            else:
+                thermostat_identifier = service.data[SERVICE_CONF_THERMOSTAT_ID]
+                window_contact_identifier = service.data[
+                    SERVICE_CONF_WINDOW_CONTACT_ID
+                ]
+                thermostat_entity_id = _resolve_association_entity(
+                    hass, thermostat_identifier, "climate"
                 )
-            raise ServiceValidationError(
-                "Could not find both paired devices on the same loaded MaxCUL connection"
-            )
+                window_contact_entity_id = _resolve_association_entity(
+                    hass, window_contact_identifier, "binary_sensor"
+                )
+                thermostat_identifiers = [
+                    thermostat_entity_id or thermostat_identifier
+                ]
+                window_contact_identifiers = [
+                    window_contact_entity_id or window_contact_identifier
+                ]
 
-        (
+            for thermostat_identifier in dict.fromkeys(thermostat_identifiers):
+                for window_contact_identifier in dict.fromkeys(
+                    window_contact_identifiers
+                ):
+                    associations.append(
+                        _resolve_association_pair(
+                            thermostat_identifier,
+                            window_contact_identifier,
+                            entries,
+                        )
+                    )
+
+        for (
             entry,
-            numeric_thermostat_id,
-            thermostat_protocol_type,
-            numeric_window_contact_id,
-        ) = matching_entries[0]
-        entry.runtime_data.set_device_association(
-            numeric_thermostat_id,
-            thermostat_protocol_type,
-            numeric_window_contact_id,
-            associate=associate,
-        )
+            thermostat_id,
+            thermostat_type,
+            window_contact_id,
+        ) in associations:
+            entry.runtime_data.set_device_association(
+                thermostat_id,
+                thermostat_type,
+                window_contact_id,
+                associate=associate,
+            )
 
     await hass.http.async_register_static_paths(
         [
@@ -621,6 +632,154 @@ def _is_window_contact_type(device_type: object) -> bool:
     return normalized in {"shuttercontact", "windowcontact", "windowshuttercontact"}
 
 
+def _resolve_selected_association_entity(
+    hass: HomeAssistant, entity_id: str, expected_domain: str
+) -> str:
+    """Resolve and validate an entity selected for a multi-device association."""
+    device_id = _resolve_association_entity(hass, entity_id, expected_domain)
+    if device_id is None:
+        raise ServiceValidationError(
+            f"Selected entity {entity_id} is not a registered MaxCUL {expected_domain} entity"
+        )
+    return device_id
+
+
+def _association_devices_in_area(
+    hass: HomeAssistant,
+    config_entry: MaxCulConfigEntry,
+    area_id: str,
+    expected_domain: str,
+) -> list[str]:
+    """Return supported paired devices of one entity domain assigned to an area."""
+    known_devices = config_entry.data.get(CONF_DEVICES) or {}
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+    matching_device_ids = []
+
+    for entity in entity_registry.entities.values():
+        if (
+            entity.platform != DOMAIN
+            or entity.entity_id.partition(".")[0] != expected_domain
+        ):
+            continue
+
+        device_id = entity.unique_id
+        device = known_devices.get(device_id)
+        if not isinstance(device, dict):
+            continue
+        device_type = get_effective_device_type(
+            config_entry, device_id, device.get(CONF_TYPE)
+        )
+        if expected_domain == "climate":
+            if _association_thermostat_type(device_type) is None:
+                continue
+        elif not _is_window_contact_type(device_type):
+            continue
+
+        device_entry = (
+            device_registry.devices.get(entity.device_id)
+            if entity.device_id is not None
+            else None
+        )
+        assigned_area_id = entity.area_id or (
+            device_entry.area_id if device_entry is not None else None
+        )
+        if assigned_area_id == area_id:
+            matching_device_ids.append(device_id)
+
+    return list(dict.fromkeys(matching_device_ids))
+
+
+def _resolve_association_pair(
+    thermostat_identifier: str,
+    window_contact_identifier: str,
+    entries: list[MaxCulConfigEntry],
+) -> tuple[MaxCulConfigEntry, int, str, int]:
+    """Resolve one association pair to a loaded connection and protocol type."""
+    matching_associations = []
+    unsupported_thermostat = False
+    unsupported_window_contact = False
+
+    for entry in entries:
+        known_devices = entry.data.get(CONF_DEVICES) or {}
+        thermostats = _find_paired_device_candidates(
+            known_devices, thermostat_identifier
+        )
+        window_contacts = _find_paired_device_candidates(
+            known_devices, window_contact_identifier
+        )
+        if not thermostats or not window_contacts:
+            continue
+
+        for thermostat_id, thermostat in thermostats:
+            thermostat_type = _association_thermostat_type(
+                get_effective_device_type(
+                    entry, thermostat_id, thermostat.get(CONF_TYPE)
+                )
+            )
+            if thermostat_type is None:
+                unsupported_thermostat = True
+                continue
+
+            for window_contact_id, window_contact in window_contacts:
+                if not _is_window_contact_type(
+                    get_effective_device_type(
+                        entry,
+                        window_contact_id,
+                        window_contact.get(CONF_TYPE),
+                    )
+                ):
+                    unsupported_window_contact = True
+                    continue
+                try:
+                    numeric_thermostat_id = int(thermostat_id)
+                    numeric_window_contact_id = int(window_contact_id)
+                except ValueError as err:
+                    raise ServiceValidationError(
+                        "A paired MAX! device has an invalid stored address"
+                    ) from err
+
+                if any(
+                    device_id < 1 or device_id > 0xFFFFFF
+                    for device_id in (
+                        numeric_thermostat_id,
+                        numeric_window_contact_id,
+                    )
+                ):
+                    raise ServiceValidationError(
+                        "MAX! device addresses must be between 000001 and FFFFFF"
+                    )
+                if numeric_thermostat_id == numeric_window_contact_id:
+                    continue
+                matching_associations.append(
+                    (
+                        entry,
+                        numeric_thermostat_id,
+                        thermostat_type,
+                        numeric_window_contact_id,
+                    )
+                )
+
+    if len(matching_associations) > 1:
+        raise ServiceValidationError(
+            "Device identifiers match multiple paired devices or connections; "
+            "use hexadecimal addresses and specify device_path if needed"
+        )
+    if matching_associations:
+        return matching_associations[0]
+    if unsupported_thermostat:
+        raise ServiceValidationError(
+            f"{thermostat_identifier} is not a supported heating thermostat"
+        )
+    if unsupported_window_contact:
+        raise ServiceValidationError(
+            f"{window_contact_identifier} is not a supported window contact"
+        )
+    raise ServiceValidationError(
+        "Could not find both paired devices on the same loaded MaxCUL connection"
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: MaxCulConfigEntry
 ) -> bool:
@@ -661,10 +820,7 @@ async def async_setup_entry(
             identifier_domain == DOMAIN and device_id not in known_device_ids
             for identifier_domain, device_id in device_entry.identifiers
         ):
-            device_registry.async_update_device(
-                device_entry.id,
-                remove_config_entry_id=config_entry.entry_id,
-            )
+            device_registry.async_remove_device(device_entry.id)
 
     try:
         await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
@@ -946,7 +1102,7 @@ class MaxCulConnection:
 
     def add_paired_device(self, device_id: int) -> None:
         """Add a device id to the paired devices."""
-        LOGGER.debug("Adding device %s", device_id)
+        LOGGER.debug("Adding device %s (0x%x)", device_id, device_id)
         self._connection.add_paired_device(device_id)
 
     def set_temperature(

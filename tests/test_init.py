@@ -151,6 +151,27 @@ async def test_setup_entry(hass):
     assert hass.data.get('entity_registry').entities.get('climate.thermostat1')
 
 
+async def test_setup_removes_registry_devices_missing_from_entry(
+    hass: HomeAssistant,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_DEVICE_PATH: "/dev/tty0", CONF_DEVICES: {}},
+        entry_id="test-stale-device",
+    )
+    config_entry.add_to_hass(hass)
+    device_registry = dr.async_get(hass)
+    device_registry.async_get_or_create(
+        config_entry_id=config_entry.entry_id,
+        identifiers={(DOMAIN, "12345")},
+        name="Old device",
+    )
+
+    assert await async_setup_entry(hass, config_entry)
+
+    assert device_registry.async_get_device({(DOMAIN, "12345")}) is None
+
+
 async def test_fht_id_response_creates_sensor_and_home_matic_id(
     hass: HomeAssistant,
     max_connection_factory: MockConnectionFactory,

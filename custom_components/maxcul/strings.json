@@ -130,7 +130,7 @@
         "name": "FHT ID"
       },
       "cul_firmware_update": {
-        "name": "CUL firmware update status"
+        "name": "CUL firmware"
       }
     }
   }

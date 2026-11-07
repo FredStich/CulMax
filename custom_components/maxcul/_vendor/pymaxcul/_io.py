@@ -20,6 +20,13 @@ COMMAND_REQUEST_BUDGET = 'X'
 MIN_REQUIRED_BUDGET = 1500
 COMMAND_CHARACTER_WEIGHT = 30
 
+COMMAND_DESCRIPTIONS = {
+    "VH": "query CUL hardware revision",
+    "X21": "enable signal-strength reporting",
+    "Zr": "enable Moritz-message reception",
+    "T01": "disable FHT mode (station ID 0000)",
+}
+
 CUL_VERSION_PATTERN = re.compile(r"^V\s+\d+(?:\.\d+)*(?:\s+.+)?$")
 FHT_ID_PATTERN = re.compile(r"^[0-9A-Fa-f]{4}$")
 
@@ -331,7 +338,11 @@ class CulIoThread(threading.Thread):
     def _writeline(self, command):
         """Sends given command to CUL. Invalidates has_send_budget if command starts with Zs"""
         if not command == COMMAND_REQUEST_BUDGET:
-            LOGGER.debug("Writing command %s", command)
+            description = COMMAND_DESCRIPTIONS.get(command)
+            if description is None:
+                LOGGER.debug("Writing command %s", command)
+            else:
+                LOGGER.debug("Writing command %s (%s)", command, description)
         try:
             self._com_port.write((command + "\r\n").encode())
         except (SerialException, TelnetException) as err:

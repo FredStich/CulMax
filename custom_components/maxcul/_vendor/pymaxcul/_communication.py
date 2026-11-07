@@ -55,6 +55,7 @@ from ._const import (
 
 # local constants
 LOGGER = logging.getLogger(__name__)
+CC1101_RSSI_OFFSET_868_MHZ = 74
 
 # Hardcodings based on FHEM recommendations
 DEFAULT_CUBE_ID = 0x123456
@@ -271,9 +272,13 @@ class MaxConnection(threading.Thread):
             return True
         return False
 
-    def _handle_message(self, msg, signal_strenth):
+    def _handle_message(self, msg, signal_strength):
         """Internal function to respond to incoming messages where appropriate"""
-        LOGGER.debug("Received message %s (%d)", msg, signal_strenth)
+        signed_rssi = (
+            signal_strength if signal_strength < 0x80 else signal_strength - 0x100
+        )
+        rssi_dbm = signed_rssi / 2 - CC1101_RSSI_OFFSET_868_MHZ
+        LOGGER.debug("Received message %s, RSSI: %.1f dBm", msg, rssi_dbm)
 
         if msg.receiver_id != 0 and msg.receiver_id != self.sender_id:
             # discard messages not addressed to us

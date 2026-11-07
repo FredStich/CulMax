@@ -122,6 +122,14 @@ def _version_parts(version: str) -> tuple[int, ...] | None:
     return tuple(int(part) for part in version.split("."))
 
 
+def _current_cul_firmware_version(firmware_response: str | None) -> str | None:
+    """Extract the a-culfw version from the CUL response."""
+    if firmware_response is None:
+        return None
+    match = _A_CULFW_VERSION_PATTERN.fullmatch(firmware_response)
+    return match.group(1) if match else None
+
+
 def _is_supported_cul_firmware(
     hardware_revision: str | None, current_firmware: str | None
 ) -> bool:
@@ -258,29 +266,26 @@ class CulFirmwareUpdateSensor(SensorEntity):
         self._attr_unique_id = f"{config_entry.entry_id}-cul-firmware-update"
 
     @property
-    def native_value(self) -> str:
-        """Return whether a supported CUL has an update available."""
-        return _firmware_update_state(
-            self._hardware_revision,
-            self._firmware_version,
-            self._coordinator.data,
-        )
+    def native_value(self) -> str | None:
+        """Return the installed CUL firmware version."""
+        return _current_cul_firmware_version(self._firmware_version)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose versions and the external updater for supported users."""
-        current_match = (
-            _A_CULFW_VERSION_PATTERN.fullmatch(self._firmware_version)
-            if self._firmware_version
-            else None
+        update_status = _firmware_update_state(
+            self._hardware_revision,
+            self._firmware_version,
+            self._coordinator.data,
         )
         release_data = self._coordinator.data or {}
         return {
             "hardware_revision": self._hardware_revision,
             "firmware_response": self._firmware_version,
-            "current_version": current_match.group(1) if current_match else None,
+            "current_version": self.native_value,
             "latest_version": release_data.get("latest_version"),
-            "update_available": self.native_value == "update_available",
+            "update_status": update_status,
+            "update_available": update_status == "update_available",
             "update_url": BUSWARE_CUL_UPDATER_URL,
             "check_error": release_data.get("error"),
         }

@@ -3,6 +3,7 @@
 import pytest
 
 from custom_components.maxcul.sensor import (
+    _current_cul_firmware_version,
     _firmware_update_state,
     _manifest_cul_v3_version,
 )
@@ -18,6 +19,20 @@ CUL_V3_MANIFEST = {
 
 def test_manifest_extracts_cul_v3_application_version() -> None:
     assert _manifest_cul_v3_version(CUL_V3_MANIFEST) == "1.30"
+
+
+@pytest.mark.parametrize(
+    ("firmware_response", "expected"),
+    [
+        ("V 1.29.2 a-culfw Build: 5 (2026-08-01)", "1.29.2"),
+        ("V 1.29 CUL868", None),
+        (None, None),
+    ],
+)
+def test_current_cul_firmware_version(
+    firmware_response: str | None, expected: str | None
+) -> None:
+    assert _current_cul_firmware_version(firmware_response) == expected
 
 
 @pytest.mark.parametrize(
