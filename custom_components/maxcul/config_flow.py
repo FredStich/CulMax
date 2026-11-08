@@ -120,7 +120,9 @@ class MaxculFlowHandler(ConfigFlow, domain=DOMAIN):
         if not port_options:
             return await self.async_step_manual_device_path()
 
-        port_options.append(CONF_MANUAL_PATH)
+        port_options.append(
+            {"value": CONF_MANUAL_PATH, "label": "Enter path manually"}
+        )
         errors: dict[str, str] = {}
 
         if user_input is not None:

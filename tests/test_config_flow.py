@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
@@ -20,6 +22,38 @@ from custom_components.maxcul._vendor.pymaxcul._const import (
 from custom_components.maxcul._vendor.pymaxcul._io import (
     is_cul_version_response,
 )
+
+
+async def test_device_picker_uses_selector_options_for_manual_path(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = SimpleNamespace(
+        device="/dev/ttyACM0",
+        description="CUL868",
+        serial_number="123",
+        manufacturer="busware.de",
+    )
+    monkeypatch.setattr(
+        config_flow.serial.tools.list_ports, "comports", lambda: [port]
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {config_flow.CONF_DEVICE_TYPE: config_flow.CONF_SERIAL_PORT},
+    )
+
+    assert result["step_id"] == "device_picker"
+    selector = result["data_schema"].schema[CONF_DEVICE_PATH]
+    assert selector.config.options == [
+        {
+            "value": "/dev/ttyACM0",
+            "label": "CUL868 (/dev/ttyACM0), s/n: 123 - busware.de",
+        },
+        {"value": config_flow.CONF_MANUAL_PATH, "label": "Enter path manually"},
+    ]
 
 
 async def test_options_flow_saves_and_clears_device_type_override(
