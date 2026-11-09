@@ -83,6 +83,7 @@ SERVICE_SET_WEEK_PROFILE = "set_week_profile"
 SERVICE_CONF_DEVICE_ID = "device_id"
 SERVICE_CONF_AREA_ID = "area_id"
 SERVICE_CONF_WEEK_PROFILE = "week_profile"
+SERVICE_CONF_REQUEST_ID = "request_id"
 CONF_WEEK_PROFILES = "week_profiles"
 SERVICE_ASSOCIATE = "associate"
 SERVICE_DEASSOCIATE = "deassociate"
@@ -115,6 +116,7 @@ SET_WEEK_PROFILE_SERVICE_SCHEMA = vol.Schema(
             vol.Optional(SERVICE_CONF_AREA_ID): cv.string,
             vol.Required(SERVICE_CONF_WEEK_PROFILE): cv.string,
             vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
+            vol.Optional(SERVICE_CONF_REQUEST_ID): cv.string,
         },
         _validate_week_profile_service_data,
     )
@@ -181,7 +183,12 @@ class _WeekProfileRequest:
     """Track acknowledgement state for the chunks of one profile update."""
 
     device_id: int
+    request_group_id: str
+    total_chunks: int
+    chunk_days: dict[int, int] = field(default_factory=dict)
+    acknowledged_days: set[int] = field(default_factory=set)
     pending_counters: set[int] = field(default_factory=set)
+    acknowledged_chunks: int = 0
     ready: bool = False
     failed: bool = False
 
@@ -286,15 +293,43 @@ def _store_week_profile_state(
     profile: str,
     request_id: str,
     status: str,
+    request_group_id: str | None = None,
+    progress: dict[str, int] | None = None,
 ) -> None:
     """Persist the latest profile and notify the thermostat entity."""
     device_key = str(device_id)
+    LOGGER.debug(
+        "Week profile for MAX! thermostat %s (0x%06x) changed to %s "
+        "(request %s, connection %s)",
+        device_key,
+        device_id,
+        status,
+        request_id,
+        config_entry.data[CONF_DEVICE_PATH],
+    )
     profiles = config_entry.data.get(CONF_WEEK_PROFILES) or {}
-    profile_state = {
+    previous_state = profiles.get(device_key)
+    profile_state: dict[str, Any] = {
         "profile": profile,
         "request_id": request_id,
         "status": status,
     }
+    if request_group_id is not None:
+        profile_state["request_group_id"] = request_group_id
+    elif (
+        isinstance(previous_state, dict)
+        and previous_state.get("request_id") == request_id
+    ):
+        if previous_state.get("request_group_id") is not None:
+            profile_state["request_group_id"] = previous_state["request_group_id"]
+    if progress is not None:
+        profile_state["progress"] = progress
+    elif (
+        isinstance(previous_state, dict)
+        and previous_state.get("request_id") == request_id
+    ):
+        if previous_state.get("progress") is not None:
+            profile_state["progress"] = previous_state["progress"]
     hass.config_entries.async_update_entry(
         config_entry,
         data={
@@ -360,12 +395,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     def _service_set_week_profile(service: ServiceCall) -> None:
         device_identifier = service.data.get(SERVICE_CONF_DEVICE_ID)
         area_id = service.data.get(SERVICE_CONF_AREA_ID)
+        target_description = (
+            f"area {area_id}"
+            if area_id is not None
+            else f"thermostat {device_identifier}"
+        )
         if device_identifier is not None:
             selected_entity_id = _resolve_association_entity(
                 hass, device_identifier, "climate"
             )
             if selected_entity_id is not None:
                 device_identifier = selected_entity_id
+                target_description = f"thermostat entity {device_identifier}"
         service_device_path = service.data.get(SERVICE_CONF_DEVICE_PATH)
         normalized_service_path = (
             normalize_device_path(service_device_path)
@@ -375,7 +416,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         try:
             chunks = compile_week_profile(service.data[SERVICE_CONF_WEEK_PROFILE])
         except ValueError as err:
+            LOGGER.warning(
+                "Rejected invalid week profile for %s: %s",
+                target_description,
+                err,
+            )
             raise ServiceValidationError(str(err)) from err
+        LOGGER.debug(
+            "Received week-profile request for %s (%d encoded chunks)",
+            target_description,
+            len(chunks),
+        )
 
         matching_entries: list[tuple[MaxCulConfigEntry, int]] = []
         matching_device_found = False
@@ -431,11 +482,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 matching_entries.append((entry, numeric_device_id))
 
         if area_id is None and len(matching_entries) > 1:
+            LOGGER.warning(
+                "Week-profile target %s matched multiple thermostats; "
+                "specify a device path",
+                target_description,
+            )
             raise ServiceValidationError(
                 "Thermostat identifier matches multiple paired devices or connections; "
                 "use its hexadecimal address and specify device_path if needed"
             )
         if not matching_entries:
+            LOGGER.warning("No loaded MAX! thermostat found for %s", target_description)
             if matching_device_found:
                 raise ServiceValidationError(
                     f"Device {device_identifier} is not a supported thermostat"
@@ -445,26 +502,60 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 f"{'area ' + area_id if area_id is not None else 'device ' + device_identifier}"
             )
 
+        LOGGER.debug(
+            "Resolved week-profile target %s to MAX! thermostat(s): %s",
+            target_description,
+            ", ".join(
+                f"0x{device_id:06x} via {entry.data.get(CONF_DEVICE_PATH)}"
+                for entry, device_id in matching_entries
+            ),
+        )
         profile = service.data[SERVICE_CONF_WEEK_PROFILE]
+        request_group_id = service.data.get(SERVICE_CONF_REQUEST_ID) or uuid4().hex
         send_errors: list[tuple[int, HomeAssistantError]] = []
         for entry, numeric_device_id in matching_entries:
-            request_id = uuid4().hex
+            request_id = f"{request_group_id}:{entry.entry_id}:{numeric_device_id}"
+            progress = {
+                "acknowledged_chunks": 0,
+                "total_chunks": len(chunks),
+                "completed_days": 0,
+                "total_days": len({chunk.day for chunk in chunks}),
+                "current_day": min(chunk.day for chunk in chunks),
+            }
             _store_week_profile_state(
-                hass, entry, numeric_device_id, profile, request_id, "pending"
+                hass,
+                entry,
+                numeric_device_id,
+                profile,
+                request_id,
+                "pending",
+                request_group_id,
+                progress,
             )
             try:
                 entry.runtime_data.set_week_profile(
-                    numeric_device_id, chunks, request_id
+                    numeric_device_id, chunks, request_id, request_group_id
                 )
             except HomeAssistantError as err:
                 _store_week_profile_state(
-                    hass, entry, numeric_device_id, profile, request_id, "failed"
+                    hass,
+                    entry,
+                    numeric_device_id,
+                    profile,
+                    request_id,
+                    "failed",
+                    request_group_id,
+                    progress,
                 )
                 send_errors.append((numeric_device_id, err))
 
         if send_errors:
             failed_ids = ", ".join(
                 f"{device_id:06x}" for device_id, _ in send_errors
+            )
+            LOGGER.error(
+                "Could not queue week profile for MAX! thermostat(s): %s",
+                failed_ids,
             )
             raise ServiceValidationError(
                 f"Could not queue week profile for MAX! thermostat(s): {failed_ids}"
@@ -505,6 +596,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 profile_state["profile"],
                 payload["request_id"],
                 payload["status"],
+                payload.get("request_group_id"),
+                payload.get("progress"),
             )
             break
 
@@ -824,9 +917,20 @@ async def async_setup_entry(
     hass: HomeAssistant, config_entry: MaxCulConfigEntry
 ) -> bool:
     """Set up MaxCUL from a config entry."""
-    config_entry.async_on_unload(
-        config_entry.add_update_listener(_async_options_updated)
-    )
+    previous_options = dict(config_entry.options)
+
+    async def options_updated(
+        hass: HomeAssistant, updated_entry: MaxCulConfigEntry
+    ) -> None:
+        nonlocal previous_options
+        current_options = dict(updated_entry.options)
+        if current_options == previous_options:
+            return
+        previous_options = current_options
+        LOGGER.debug("Reloading MaxCUL because integration options changed")
+        await hass.config_entries.async_reload(updated_entry.entry_id)
+
+    config_entry.async_on_unload(config_entry.add_update_listener(options_updated))
     device_path: str = config_entry.data[CONF_DEVICE_PATH]
     sender_id = config_entry.options.get(CONF_SENDER_ID)
 
@@ -874,13 +978,6 @@ async def async_setup_entry(
 
     connection.mark_setup_complete()
     return True
-
-
-async def _async_options_updated(
-    hass: HomeAssistant, config_entry: MaxCulConfigEntry
-) -> None:
-    """Reload entities when radio or device-type options change."""
-    await hass.config_entries.async_reload(config_entry.entry_id)
 
 
 async def async_unload_entry(
@@ -1087,16 +1184,38 @@ class MaxCulConnection:
             payload["status_update"] = True
             dispatcher_send(self._hass, SIGNAL_WEEK_PROFILE_UPDATE, payload)
 
-    def _emit_week_profile_status(
-        self, device_id: int, request_id: str, status: str
-    ) -> None:
-        """Publish the state of a queued weekly-profile request."""
+    @staticmethod
+    def _week_profile_progress(request: _WeekProfileRequest) -> dict[str, int]:
+        pending_days = {
+            request.chunk_days[counter]
+            for counter in request.pending_counters
+            if counter in request.chunk_days
+        }
+        incomplete_days = [
+            day
+            for day in set(request.chunk_days.values())
+            if day not in request.acknowledged_days
+        ]
+        return {
+            "acknowledged_chunks": request.acknowledged_chunks,
+            "total_chunks": request.total_chunks,
+            "completed_days": len(request.acknowledged_days),
+            "total_days": len(set(request.chunk_days.values())),
+            "current_day": min(pending_days or incomplete_days, default=0),
+        }
+
+    def _publish_week_profile_progress(self, request_id: str) -> None:
+        request = self._week_profile_requests.get(request_id)
+        if request is None:
+            return
         self._callback(
             EVENT_WEEK_PROFILE_UPDATE,
             {
-                ATTR_DEVICE_ID: device_id,
+                ATTR_DEVICE_ID: request.device_id,
                 "request_id": request_id,
-                "status": status,
+                "request_group_id": request.request_group_id,
+                "status": "pending",
+                "progress": self._week_profile_progress(request),
             },
         )
 
@@ -1111,6 +1230,25 @@ class MaxCulConnection:
 
         self._week_profile_counters.pop(message.counter, None)
         request.pending_counters.discard(message.counter)
+        day = request.chunk_days.get(message.counter)
+        if message.state == "ok":
+            request.acknowledged_chunks += 1
+            if request.ready and day is not None and not any(
+                request.chunk_days.get(counter) == day
+                for counter in request.pending_counters
+            ):
+                request.acknowledged_days.add(day)
+        if request.ready:
+            self._publish_week_profile_progress(request_id)
+        LOGGER.debug(
+            "Received week-profile ACK from MAX! thermostat 0x%06x "
+            "for counter %s: %s (%d counters pending, request %s)",
+            request.device_id,
+            message.counter,
+            message.state,
+            len(request.pending_counters),
+            request_id,
+        )
         if message.state != "ok":
             request.failed = True
         if request.ready and request.failed:
@@ -1121,19 +1259,44 @@ class MaxCulConnection:
     def _check_week_profile_timeouts(self) -> None:
         outstanding = self._connection._outstanding_acks
         for request_id, request in tuple(self._week_profile_requests.items()):
-            if request.ready and any(
-                counter not in outstanding
+            expired_counters = [
+                counter
                 for counter in request.pending_counters
-            ):
+                if counter not in outstanding
+            ]
+            if request.ready and expired_counters:
+                LOGGER.warning(
+                    "Timed out waiting for week-profile ACK from MAX! thermostat "
+                    "0x%06x for counter(s) %s (request %s)",
+                    request.device_id,
+                    ", ".join(str(counter) for counter in expired_counters),
+                    request_id,
+                )
                 self._finish_week_profile(request_id, "failed")
 
     def _finish_week_profile(self, request_id: str, status: str) -> None:
-        request = self._week_profile_requests.pop(request_id, None)
+        request = self._week_profile_requests.get(request_id)
         if request is None:
             return
+        self._callback(
+            EVENT_WEEK_PROFILE_UPDATE,
+            {
+                ATTR_DEVICE_ID: request.device_id,
+                "request_id": request_id,
+                "request_group_id": request.request_group_id,
+                "status": status,
+                "progress": self._week_profile_progress(request),
+            },
+        )
+        self._week_profile_requests.pop(request_id, None)
         for counter in request.pending_counters:
             self._week_profile_counters.pop(counter, None)
-        self._emit_week_profile_status(request.device_id, request_id, status)
+        LOGGER.debug(
+            "Finished week-profile request %s for MAX! thermostat 0x%06x: %s",
+            request_id,
+            request.device_id,
+            status,
+        )
 
     def enable_pairing(self, duration: int) -> None:
         """Enable pairing of devices."""
@@ -1168,10 +1331,26 @@ class MaxCulConnection:
             )
 
     def set_week_profile(
-        self, device_id: int, chunks: list[WeekProfileChunk], request_id: str
+        self,
+        device_id: int,
+        chunks: list[WeekProfileChunk],
+        request_id: str,
+        request_group_id: str | None = None,
     ) -> None:
         """Send an encoded week profile directly to a thermostat."""
-        request = _WeekProfileRequest(device_id)
+        LOGGER.debug(
+            "Sending week profile to MAX! thermostat 0x%06x via %s "
+            "(%d chunks, request %s)",
+            device_id,
+            self._device_path,
+            len(chunks),
+            request_id,
+        )
+        request = _WeekProfileRequest(
+            device_id=device_id,
+            request_group_id=request_group_id or request_id,
+            total_chunks=len(chunks),
+        )
         self._week_profile_requests[request_id] = request
         for chunk in chunks:
             message = ConfigWeekProfileMessage(
@@ -1181,14 +1360,42 @@ class MaxCulConnection:
             )
             message.encode_payload = lambda payload=chunk.payload: payload
             request.pending_counters.add(message.counter)
+            request.chunk_days[message.counter] = chunk.day
             self._week_profile_counters[message.counter] = request_id
             if not self._connection._send_message(message):
+                LOGGER.error(
+                    "Could not queue week-profile chunk for MAX! thermostat "
+                    "0x%06x (day %s, part %s, counter %s, request %s)",
+                    device_id,
+                    chunk.day,
+                    chunk.part,
+                    message.counter,
+                    request_id,
+                )
                 self._finish_week_profile(request_id, "failed")
                 raise HomeAssistantError(
                     f"Could not queue week profile for MAX! device {device_id}"
                 )
+            LOGGER.debug(
+                "Queued week-profile chunk for MAX! thermostat 0x%06x "
+                "(day %s, part %s, counter %s, request %s)",
+                device_id,
+                chunk.day,
+                chunk.part,
+                message.counter,
+                request_id,
+            )
             self._connection._await_ack(message)
         request.ready = True
+        request.acknowledged_days.update(
+            day
+            for day in set(request.chunk_days.values())
+            if not any(
+                request.chunk_days.get(counter) == day
+                for counter in request.pending_counters
+            )
+        )
+        self._publish_week_profile_progress(request_id)
         if request.failed:
             self._finish_week_profile(request_id, "failed")
         elif not request.pending_counters:

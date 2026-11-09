@@ -12,6 +12,15 @@ const MIN_TEMP = 4.5;
 const MAX_TEMP = 30.5;
 const DAY_MINUTES = 24 * 60;
 const STEP_MINUTES = 5;
+const WEEKDAYS = [
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+  "Sonntag",
+];
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -69,7 +78,11 @@ class MaxculWeekProfileCard extends HTMLElement {
     this._status = "";
     this._statusError = false;
     this._statusIcon = "";
+    this._progressPercentValue = null;
+    this._activeProfileRequestGroupId = null;
     this._loadedProfileRequestId = null;
+    this._lastDebugRoomEntityIds = null;
+    this._lastDebugProfileStatuses = null;
   }
 
   static getConfigElement() {
@@ -87,8 +100,12 @@ class MaxculWeekProfileCard extends HTMLElement {
     if (this._config && this._targetKey !== targetKey) {
       this._schedule = makeDefaultSchedule();
       this._loadedProfileRequestId = null;
+      this._lastDebugRoomEntityIds = null;
+      this._lastDebugProfileStatuses = null;
+      this._activeProfileRequestGroupId = null;
       this._status = "";
       this._statusError = false;
+      this._progressPercentValue = null;
     }
     this._config = {
       ...config,
@@ -96,12 +113,19 @@ class MaxculWeekProfileCard extends HTMLElement {
       area_id: areaId,
     };
     this._targetKey = targetKey;
+    this._debug("Konfiguration gesetzt", {
+      target: areaId ? "area" : deviceId ? "thermostat" : "none",
+      area_id: areaId || undefined,
+      device_id: deviceId || undefined,
+      device_path: this._config.device_path || undefined,
+    });
     this._render();
     this._syncProfileFromEntity();
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._renderRoomThermostats();
     this._syncProfileFromEntity();
   }
 
@@ -149,6 +173,106 @@ class MaxculWeekProfileCard extends HTMLElement {
     return this._hass?.areas?.[this._config.area_id]?.name || this._config.area_id;
   }
 
+  _renderRoomThermostats() {
+    const section = this.shadowRoot.querySelector(".room-thermostats");
+    if (!section) return;
+    section.hidden = !this._config?.area_id;
+    if (!this._config?.area_id) return;
+
+    const entityIds = this._roomThermostatEntityIds();
+    const entityIdsKey = `${this._config.area_id}:${entityIds.join(",")}`;
+    if (entityIdsKey !== this._lastDebugRoomEntityIds) {
+      this._lastDebugRoomEntityIds = entityIdsKey;
+      this._debug("Thermostate im Raum ermittelt", {
+        area_id: this._config.area_id,
+        entity_ids: entityIds,
+      });
+    }
+    const list = section.querySelector(".room-thermostat-list");
+    list.replaceChildren();
+    section.querySelector(".room-thermostat-count").textContent =
+      `${entityIds.length} Thermostat${entityIds.length === 1 ? "" : "e"} im Raum`;
+
+    if (!entityIds.length) {
+      list.append(element("li", "hint", "Keine aktiven CulMax-Thermostate gefunden."));
+      return;
+    }
+
+    entityIds.forEach((entityId) => {
+      const state = this._hass.states[entityId];
+      const name =
+        state?.attributes?.friendly_name ||
+        state?.attributes?.maxcul_device_name ||
+        entityId;
+      const item = element("li", "room-thermostat");
+      const profileStatus = state?.attributes?.maxcul_week_profile_status;
+      const requestGroupId =
+        state?.attributes?.maxcul_week_profile_request_group_id ||
+        state?.attributes?.maxcul_week_profile_request_id;
+      const progress = state?.attributes?.maxcul_week_profile_progress;
+      const hasProfile =
+        typeof state?.attributes?.maxcul_week_profile === "string" &&
+        state.attributes.maxcul_week_profile.length > 0;
+      const status = this._thermostatProfileStatus(
+        profileStatus,
+        hasProfile,
+        requestGroupId,
+        progress,
+      );
+      const statusRow = element(
+        "div",
+        `room-thermostat-status${status.isError ? " error" : ""}`,
+      );
+      const statusIcon = element("ha-icon");
+      statusIcon.setAttribute("icon", status.icon);
+      statusRow.append(statusIcon, element("span", "", status.message));
+      item.append(
+        element("span", "room-thermostat-name", name),
+        element("span", "room-thermostat-entity", entityId),
+        statusRow,
+      );
+      list.append(item);
+    });
+  }
+
+  _thermostatProfileStatus(status, hasProfile, requestGroupId, progress) {
+    if (status === "acknowledged") {
+      return {
+        message: "Plan ist beim Thermostat angekommen.",
+        icon: "mdi:check-circle",
+        isError: false,
+      };
+    }
+    if (
+      status === "pending" &&
+      requestGroupId === this._activeProfileRequestGroupId
+    ) {
+      return {
+        message:
+          progress?.total_chunks > 0
+            ? `Wochenprofil wird gesendet (${progress.completed_days || 0}/7 Tage, ${this._progressPercent(progress)}%).`
+            : "Wochenprofil wird gesendet …",
+        icon: "mdi:progress-clock",
+        isError: false,
+      };
+    }
+    if (status === "failed") {
+      return {
+        message:
+          "Keine Antwort vom Thermostat. Prüfe, ob es eingeschaltet und in Funkreichweite ist.",
+        icon: "mdi:alert-circle",
+        isError: true,
+      };
+    }
+    return {
+      message: hasProfile
+        ? "Zuletzt gesendeter Plan geladen."
+        : "Noch kein Wochenprofil gesendet.",
+      icon: "mdi:information-outline",
+      isError: false,
+    };
+  }
+
   _selectedThermostatState() {
     if (!this._hass || !this._config.device_id) return null;
     const direct = this._hass.states[this._config.device_id];
@@ -178,6 +302,9 @@ class MaxculWeekProfileCard extends HTMLElement {
     if (!this._hass || !this._isThermostatSelected()) return;
     const states = this._selectedThermostatStates();
     if (!states.length) {
+      this._debug("Keine passenden Thermostat-Entitäten gefunden", {
+        target: this._targetKey,
+      });
       this._setStatus(
         this._config.area_id
           ? "Im ausgewählten Raum wurden keine aktiven CulMax-Thermostate gefunden."
@@ -187,14 +314,34 @@ class MaxculWeekProfileCard extends HTMLElement {
       );
       return;
     }
+    const profileStatuses = states.map((thermostatState) => ({
+      entity_id: thermostatState.entity_id,
+      status:
+        thermostatState.attributes?.maxcul_week_profile_status || "unknown",
+      request_id:
+        thermostatState.attributes?.maxcul_week_profile_request_id || null,
+      has_profile:
+        typeof thermostatState.attributes?.maxcul_week_profile === "string" &&
+        thermostatState.attributes.maxcul_week_profile.length > 0,
+    }));
+    const profileStatusesKey = `${this._targetKey}:${JSON.stringify(profileStatuses)}`;
+    if (profileStatusesKey !== this._lastDebugProfileStatuses) {
+      this._lastDebugProfileStatuses = profileStatusesKey;
+      this._debug("Thermostat-Profilstatus aktualisiert", {
+        target: this._targetKey,
+        thermostats: profileStatuses,
+      });
+    }
     const statesWithProfile = states.filter(
-      (state) => typeof state.attributes?.maxcul_week_profile === "string",
+      (state) =>
+        typeof state.attributes?.maxcul_week_profile === "string" &&
+        state.attributes.maxcul_week_profile.length > 0,
     );
     const state = statesWithProfile[0] || states[0];
     const attributes = state.attributes || {};
     const profile = attributes.maxcul_week_profile;
     const requestId = attributes.maxcul_week_profile_request_id;
-    if (typeof profile === "string" && profile) {
+    if (statesWithProfile.length) {
       const loadedSchedule = parseProfile(profile);
       if (!loadedSchedule) {
         this._setStatus(
@@ -210,18 +357,12 @@ class MaxculWeekProfileCard extends HTMLElement {
         this._loadedProfileRequestId = profileKey;
         this._render();
       }
-    } else {
-      this._setStatus(
-        "Kein gespeichertes Wochenprofil gefunden. Die angezeigten 20 °C sind nur Voreinstellungen. Stelle erst deinen gewünschten Wochenplan wieder her, bevor du ihn sendest.",
-        false,
-        "mdi:information-outline",
-      );
-      return;
     }
 
     if (
       this._config.area_id &&
-      (statesWithProfile.length !== states.length ||
+      ((statesWithProfile.length > 0 &&
+        statesWithProfile.length !== states.length) ||
         new Set(
           statesWithProfile.map(
             (profileState) => profileState.attributes.maxcul_week_profile,
@@ -236,12 +377,59 @@ class MaxculWeekProfileCard extends HTMLElement {
       return;
     }
 
-    const statuses = states.map(
-      (thermostatState) =>
-        thermostatState.attributes?.maxcul_week_profile_status,
-    );
+    const requestStatuses = states.map((thermostatState) => ({
+      requestGroupId:
+        thermostatState.attributes?.maxcul_week_profile_request_group_id ||
+        thermostatState.attributes?.maxcul_week_profile_request_id ||
+        null,
+      status: thermostatState.attributes?.maxcul_week_profile_status,
+      progress: thermostatState.attributes?.maxcul_week_profile_progress,
+    }));
+    const activeRequestStatuses = this._activeProfileRequestGroupId
+      ? requestStatuses.filter(
+          (profileStatus) =>
+            profileStatus.requestGroupId ===
+            this._activeProfileRequestGroupId,
+        )
+      : [];
+    if (
+      this._activeProfileRequestGroupId &&
+      !activeRequestStatuses.length
+    ) {
+      this._setStatus("Wochenprofil wird gesendet …", false, "mdi:send", 0);
+      return;
+    }
+
+    if (
+      this._activeProfileRequestGroupId &&
+      activeRequestStatuses.every(
+        (profileStatus) => profileStatus.status !== "pending",
+      )
+    ) {
+      this._activeProfileRequestGroupId = null;
+    }
+
+    const statuses = this._activeProfileRequestGroupId
+      ? activeRequestStatuses.map((profileStatus) => profileStatus.status)
+      : requestStatuses
+          .filter((profileStatus) => profileStatus.status !== "pending")
+          .map((profileStatus) => profileStatus.status);
     const failedCount = statuses.filter((value) => value === "failed").length;
     const pendingCount = statuses.filter((value) => value === "pending").length;
+    if (
+      pendingCount &&
+      !failedCount &&
+      this._activeProfileRequestGroupId
+    ) {
+      const progress = this._aggregateProgress(activeRequestStatuses);
+      this._setStatus(
+        progress.message,
+        false,
+        "mdi:progress-clock",
+        progress.percent,
+      );
+      return;
+    }
     if (failedCount) {
       this._setStatus(
         this._config.area_id
@@ -258,7 +446,10 @@ class MaxculWeekProfileCard extends HTMLElement {
         false,
         "mdi:progress-clock",
       );
-    } else if (statuses.every((value) => value === "acknowledged")) {
+    } else if (
+      statuses.length > 0 &&
+      statuses.every((value) => value === "acknowledged")
+    ) {
       this._setStatus(
         this._config.area_id
           ? `Alle ${states.length} Thermostate haben den Plan bestätigt.`
@@ -268,9 +459,11 @@ class MaxculWeekProfileCard extends HTMLElement {
       );
     } else {
       this._setStatus(
-        this._config.area_id
-          ? `Zuletzt gesendeter Plan geladen (${states.length} Thermostate im Raum).`
-          : "Zuletzt gesendeter Plan geladen.",
+        statesWithProfile.length
+          ? this._config.area_id
+            ? `Zuletzt gesendeter Plan geladen (${states.length} Thermostate im Raum).`
+            : "Zuletzt gesendeter Plan geladen."
+          : "Kein gespeichertes Wochenprofil gefunden. Die angezeigten 20 °C sind nur Voreinstellungen. Stelle erst deinen gewünschten Wochenplan wieder her, bevor du ihn sendest.",
         false,
         "mdi:information-outline",
       );
@@ -287,6 +480,15 @@ class MaxculWeekProfileCard extends HTMLElement {
         h2 { margin: 0 0 4px; font-size: 1.25rem; }
         .subtitle, .notice, .hint { color: var(--secondary-text-color); font-size: .9rem; }
         .notice { margin: 12px 0; padding: 10px; border-left: 3px solid var(--warning-color, #db9c20); background: var(--secondary-background-color); }
+        .room-thermostats { margin: 12px 0; }
+        .room-thermostats[hidden] { display: none; }
+        .room-thermostats h3 { margin: 0 0 6px; font-size: 1rem; }
+        .room-thermostat-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+        .room-thermostat { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 8px 10px; border: 1px solid var(--divider-color); border-radius: 6px; }
+        .room-thermostat-entity { color: var(--secondary-text-color); font-size: .85rem; }
+        .room-thermostat-status { display: flex; flex: 1 1 100%; align-items: center; gap: 6px; font-size: .85rem; }
+        .room-thermostat-status ha-icon { flex: 0 0 auto; --mdc-icon-size: 18px; color: var(--primary-color); }
+        .room-thermostat-status.error, .room-thermostat-status.error ha-icon { color: var(--error-color, #b3261e); }
         .days { display: grid; gap: 12px; }
         .day { padding: 12px; border: 1px solid var(--divider-color); border-radius: 8px; }
         .day-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
@@ -311,6 +513,9 @@ class MaxculWeekProfileCard extends HTMLElement {
         .status ha-icon[hidden] { display: none; }
         .status.error ha-icon { color: var(--error-color, #b3261e); }
         .status.error { color: var(--error-color, #b3261e); }
+        .send-progress { flex: 1 1 100%; display: grid; gap: 4px; color: var(--secondary-text-color); font-size: .85rem; }
+        .send-progress[hidden] { display: none; }
+        .send-progress progress { width: 100%; height: 8px; accent-color: var(--primary-color); }
         @media (max-width: 520px) {
           ha-card { padding: 12px; }
           .switch { grid-template-columns: 1fr 1fr 38px; gap: 5px; }
@@ -320,6 +525,10 @@ class MaxculWeekProfileCard extends HTMLElement {
       <ha-card>
         <h2>MAX! Wochenprofil</h2>
         <div class="subtitle">${this._config.area_id ? `Raum ${this._escapeText(this._selectedRoomName())}` : this._config.device_id ? `Thermostat ${this._escapeText(this._config.device_id)}` : "Thermostat oder Raum in den Karteneinstellungen auswählen"}</div>
+        <section class="room-thermostats" aria-label="Thermostate im Raum" hidden>
+          <h3 class="room-thermostat-count"></h3>
+          <ul class="room-thermostat-list"></ul>
+        </section>
         <div class="notice">Das Profil wird lokal in Home Assistant gespeichert. Das tatsächlich im Thermostat gespeicherte Profil kann nicht ausgelesen werden; angezeigt wird das zuletzt gesendete Profil. Wenn noch keines gesendet wurde, startet der Editor mit 20 °C für alle Tage.</div>
         <p class="hint">Klicke in die Zeitleiste, um einen Schaltpunkt hinzuzufügen. Zeiten lassen sich in 5-Minuten-Schritten einstellen.</p>
         <div class="days"></div>
@@ -330,6 +539,10 @@ class MaxculWeekProfileCard extends HTMLElement {
             <ha-icon aria-hidden="true"></ha-icon>
             <span class="status-message"></span>
           </div>
+          <div class="send-progress" hidden>
+            <progress max="100" value="0" aria-label="Fortschritt Wochenprofil"></progress>
+            <span class="send-progress-message"></span>
+          </div>
         </div>
       </ha-card>
     `;
@@ -339,6 +552,7 @@ class MaxculWeekProfileCard extends HTMLElement {
       days.append(this._renderDay(segments, dayIndex));
     });
 
+    this._renderRoomThermostats();
     this.shadowRoot.querySelector(".save").addEventListener("click", () => {
       this._sendProfile();
     });
@@ -560,50 +774,109 @@ class MaxculWeekProfileCard extends HTMLElement {
     }
     const button = this.shadowRoot.querySelector(".save");
     button.disabled = true;
-    this._setStatus(
-      "Plan wird gesendet …",
-      false,
-      "mdi:send",
-    );
+    this._setStatus("Wochenprofil wird gesendet …", false, "mdi:send", 0);
 
     try {
       const serviceData = {
         week_profile: this._serializeProfile(),
+        request_id:
+          globalThis.crypto?.randomUUID?.() ||
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`,
         ...(this._config.area_id
           ? { area_id: this._config.area_id }
           : { device_id: this._config.device_id }),
       };
+      this._activeProfileRequestGroupId = serviceData.request_id;
       if (this._config.device_path) {
         serviceData.device_path = this._config.device_path;
       }
+      this._debug("Sende Wochenprofil", {
+        target: this._config.area_id
+          ? { area_id: this._config.area_id }
+          : { device_id: this._config.device_id },
+        device_path: this._config.device_path || undefined,
+        thermostat_entity_ids: this._config.area_id
+          ? this._roomThermostatEntityIds()
+          : undefined,
+      });
       await this._hass.callService(
         "maxcul",
         "set_week_profile",
         serviceData,
       );
-      this._setStatus(
-        this._config.area_id
-          ? "Wochenprofil an alle CulMax-Thermostate im Raum übertragen. Warte auf Bestätigung …"
-          : "Plan abgeschickt. Warte auf Bestätigung …",
-        false,
-        "mdi:progress-clock",
-      );
+      this._debug("Wochenprofil-Service erfolgreich aufgerufen", {
+        target: this._config.area_id
+          ? { area_id: this._config.area_id }
+          : { device_id: this._config.device_id },
+      });
+      this._syncProfileFromEntity();
     } catch (error) {
+      console.error("[CulMax Wochenprofil] Senden fehlgeschlagen", {
+        target: this._targetKey,
+        error,
+      });
       this._setStatus(
         `Senden fehlgeschlagen: ${error?.message || "Home-Assistant-Fehler"}`,
         true,
         "mdi:alert-circle",
       );
+      this._activeProfileRequestGroupId = null;
     } finally {
       button.disabled = false;
     }
   }
 
-  _setStatus(message, isError = false, icon = "") {
+  _setStatus(message, isError = false, icon = "", progressPercent = null) {
     this._status = message;
     this._statusError = isError;
     this._statusIcon = icon || (isError ? "mdi:alert-circle" : "");
+    this._progressPercentValue = progressPercent;
     this._updateStatusDisplay();
+  }
+
+  _progressPercent(progress) {
+    if (!progress?.total_chunks) return 0;
+    return Math.round(
+      (progress.acknowledged_chunks / progress.total_chunks) * 100,
+    );
+  }
+
+  _aggregateProgress(profileStatuses) {
+    const progressItems = profileStatuses
+      .map((profileStatus) => profileStatus.progress)
+      .filter(
+        (progress) =>
+          progress &&
+          Number.isFinite(progress.total_chunks) &&
+          progress.total_chunks > 0,
+      );
+    if (!progressItems.length) {
+      return { message: "Wochenprofil wird gesendet …", percent: 0 };
+    }
+
+    const acknowledgedChunks = progressItems.reduce(
+      (total, progress) => total + progress.acknowledged_chunks,
+      0,
+    );
+    const totalChunks = progressItems.reduce(
+      (total, progress) => total + progress.total_chunks,
+      0,
+    );
+    const percent = Math.round((acknowledgedChunks / totalChunks) * 100);
+    const currentDay = Math.min(
+      ...progressItems.map((progress) => progress.current_day || 0),
+    );
+    const completedDays = Math.min(
+      ...progressItems.map((progress) => progress.completed_days || 0),
+    );
+    const message = this._config.area_id
+      ? `Sendestand: ${WEEKDAYS[currentDay]} – mindestens ${completedDays}/7 Tage bestätigt, ${percent}% (${profileStatuses.length} Thermostate).`
+      : `Sendestand: ${WEEKDAYS[currentDay]} – ${completedDays}/7 Tage bestätigt, ${percent}%.`;
+    return { message, percent };
+  }
+
+  _debug(message, details = {}) {
+    console.debug(`[CulMax Wochenprofil] ${message}`, details);
   }
 
   _updateStatusDisplay() {
@@ -614,6 +887,18 @@ class MaxculWeekProfileCard extends HTMLElement {
       icon.hidden = !this._statusIcon;
       status.querySelector(".status-message").textContent = this._status;
       status.classList.toggle("error", this._statusError);
+    }
+    const progressSection = this.shadowRoot.querySelector(".send-progress");
+    if (progressSection) {
+      const visible =
+        this._progressPercentValue !== null && !this._statusError;
+      progressSection.hidden = !visible;
+      if (visible) {
+        progressSection.querySelector("progress").value =
+          this._progressPercentValue;
+        progressSection.querySelector(".send-progress-message").textContent =
+          `${this._progressPercentValue}% bestätigt`;
+      }
     }
   }
 }

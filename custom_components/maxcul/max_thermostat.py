@@ -71,6 +71,14 @@ class MaxThermostat(ClimateEntity):
             if isinstance(profile_state, dict)
             else None
         )
+        self._week_profile_request_group_id = (
+            profile_state.get("request_group_id")
+            if isinstance(profile_state, dict)
+            else None
+        )
+        self._week_profile_progress = (
+            profile_state.get("progress") if isinstance(profile_state, dict) else None
+        )
 
         self._current_temperature: float | None = None
         self._target_temperature: float | None = None
@@ -155,6 +163,12 @@ class MaxThermostat(ClimateEntity):
             )
             self._week_profile_request_id = payload.get(
                 "request_id", self._week_profile_request_id
+            )
+            self._week_profile_request_group_id = payload.get(
+                "request_group_id", self._week_profile_request_group_id
+            )
+            self._week_profile_progress = payload.get(
+                "progress", self._week_profile_progress
             )
             self.async_schedule_update_ha_state()
 
@@ -262,6 +276,14 @@ class MaxThermostat(ClimateEntity):
             attributes["maxcul_week_profile_request_id"] = (
                 self._week_profile_request_id
             )
+            if self._week_profile_request_group_id is not None:
+                attributes["maxcul_week_profile_request_group_id"] = (
+                    self._week_profile_request_group_id
+                )
+            if self._week_profile_progress is not None:
+                attributes["maxcul_week_profile_progress"] = (
+                    self._week_profile_progress
+                )
         return attributes
 
     def set_hvac_mode(self, hvac_mode: HVACMode) -> None:

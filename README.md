@@ -447,6 +447,15 @@ type: custom:maxcul-week-profile
 area_id: living_room
 ```
 
+The card lists the CulMax thermostats currently associated with the selected
+room, including their entity IDs and each thermostat's profile status.
+During a send, the card displays acknowledged chunks as a percentage and
+reports the current weekday. For an area, progress is aggregated across the
+thermostats in that room.
+When the same thermostat is selected in another card, both cards show that
+thermostat's shared status. The “no saved profile” notice is separate from the
+per-thermostat send status and can remain visible until a profile is stored.
+
 If thermostats in the room have different saved profiles, the card warns you
 which profile is shown before it sends that schedule to all of them.
 
@@ -467,6 +476,27 @@ the profile is stored and sent separately for each thermostat. A green check
 means every selected thermostat responded to the profile messages; a clock
 means the card is waiting for a response; a warning means at least one did not
 respond, a send failed, or the room's saved profiles differ.
+While a request is pending, only the card that started that send shows the
+waiting status; other cards continue to show the last completed thermostat
+status.
+
+For troubleshooting, open the browser developer console. The card logs
+configuration, room thermostat entity IDs, profile status changes, and send
+success or failure with the `[CulMax Wochenprofil]` prefix. It does not log the
+profile contents.
+
+For Home Assistant logs, enable debug logging for CulMax in `configuration.yaml`
+(merge this into an existing `logger:` section if you already have one):
+
+```yaml
+logger:
+  logs:
+    custom_components.maxcul: debug
+```
+
+The integration logs the selected thermostat or area, resolved MAX! addresses,
+queued profile chunks and counters, acknowledgements, timeouts, and final
+success or failure. Profile contents are not logged.
 
 If the card shows 20 °C on every day, it has not loaded a saved profile for the
 selected thermostat. Check the selected entity and its `maxcul_week_profile`
@@ -474,7 +504,7 @@ attribute. Do not send the default schedule unless that is what you intend to
 program.
 
 If Home Assistant or the browser keeps a previous JavaScript copy after an
-update, change the resource URL to `/maxcul/week-profile-card.js?v=4` and
+update, change the resource URL to `/maxcul/week-profile-card.js?v=13` and
 reload the dashboard. Increase the version number on future updates.
 
 ## Associate and deassociate window contacts

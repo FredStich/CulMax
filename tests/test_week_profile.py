@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
@@ -14,6 +16,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.maxcul import (
     CONF_DEVICE_PATH,
+    CONF_SENDER_ID,
     DOMAIN,
     SERVICE_SET_WEEK_PROFILE,
     MaxCulConnection,
@@ -38,6 +41,34 @@ def _complete_profile(saturday: str = "Sat 20") -> str:
             "Fri 20",
         )
     )
+
+
+async def test_options_update_reloads_entry(
+    hass,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="week-profile-options",
+        data={CONF_DEVICE_PATH: "/dev/tty0", CONF_DEVICES: {}},
+    )
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    reload_calls = []
+
+    async def record_reload(entry_id: str) -> bool:
+        reload_calls.append(entry_id)
+        return True
+
+    monkeypatch.setattr(hass.config_entries, "async_reload", record_reload)
+    hass.config_entries.async_update_entry(
+        config_entry, options={CONF_SENDER_ID: "123456"}
+    )
+    await hass.async_block_till_done()
+
+    assert reload_calls == [config_entry.entry_id]
 
 
 def test_compile_week_profile_builds_max_day_ordered_chunks() -> None:
@@ -128,8 +159,9 @@ def test_connection_raises_when_profile_cannot_be_queued(
 
 
 def test_connection_reports_acknowledged_week_profile(
-    hass, monkeypatch: pytest.MonkeyPatch
+    hass, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.DEBUG, logger="custom_components.maxcul")
     connection = MaxCulConnection(hass, "/dev/tty0")
     monkeypatch.setattr(connection._connection, "_send_message", lambda _message: True)
     monkeypatch.setattr(connection._connection, "_await_ack", lambda _message: None)
@@ -142,16 +174,33 @@ def test_connection_reports_acknowledged_week_profile(
 
     connection.set_week_profile(
         12345,
-        [WeekProfileChunk(0, 0, "005120")],
+        [WeekProfileChunk(0, 0, "005120"), WeekProfileChunk(1, 0, "005120")],
         "profile-request",
     )
-    counter = next(iter(connection._week_profile_counters))
+    counters = list(connection._week_profile_counters)
     connection._handle_week_profile_ack(
-        AckMessage(counter=counter, sender_id=12345, state="ok")
+        AckMessage(counter=counters[0], sender_id=12345, state="ok")
     )
 
+    assert events[-1][1]["status"] == "pending"
+    assert events[-1][1]["progress"] == {
+        "acknowledged_chunks": 1,
+        "total_chunks": 2,
+        "completed_days": 1,
+        "total_days": 2,
+        "current_day": 1,
+    }
+    connection._handle_week_profile_ack(
+        AckMessage(counter=counters[1], sender_id=12345, state="ok")
+    )
     assert events[-1][1]["status"] == "acknowledged"
     assert events[-1][1]["request_id"] == "profile-request"
+    assert events[-1][1]["progress"]["acknowledged_chunks"] == 2
+    assert events[-1][1]["progress"]["total_chunks"] == 2
+    assert "Sending week profile to MAX! thermostat 0x003039" in caplog.text
+    assert "Queued week-profile chunk" in caplog.text
+    assert "Received week-profile ACK" in caplog.text
+    assert "Finished week-profile request profile-request" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -181,13 +230,21 @@ async def test_set_week_profile_service_targets_paired_thermostat(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
+    reload_calls = []
+
+    async def record_reload(entry_id: str) -> bool:
+        reload_calls.append(entry_id)
+        return True
+
+    monkeypatch.setattr(hass.config_entries, "async_reload", record_reload)
+
     connection = max_connection_factory.connections["/dev/tty0"]
     calls = []
     monkeypatch.setattr(
         connection,
         "set_week_profile",
-        lambda device_id, chunks, request_id: calls.append(
-            (device_id, chunks, request_id)
+        lambda device_id, chunks, request_id, request_group_id: calls.append(
+            (device_id, chunks, request_id, request_group_id)
         ),
     )
 
@@ -197,26 +254,40 @@ async def test_set_week_profile_service_targets_paired_thermostat(
         {
             "device_id": thermostat_identifier,
             "week_profile": _complete_profile(),
+            "request_id": "card-request",
         },
         blocking=True,
     )
+    await hass.async_block_till_done()
 
     assert len(calls) == 1
     assert calls[0][0] == 12345
     assert len(calls[0][1]) == 7
-    assert calls[0][2]
+    assert calls[0][2] != "card-request"
+    assert calls[0][3] == "card-request"
     assert config_entry.data["week_profiles"]["12345"] == {
         "profile": _complete_profile(),
         "request_id": calls[0][2],
+        "request_group_id": "card-request",
         "status": "pending",
+        "progress": {
+            "acknowledged_chunks": 0,
+            "total_chunks": 7,
+            "completed_days": 0,
+            "total_days": 7,
+            "current_day": 0,
+        },
     }
+    assert reload_calls == []
 
 
 async def test_set_week_profile_service_targets_thermostats_in_area(
     hass,
     max_connection_factory,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.DEBUG, logger="custom_components.maxcul")
     config_entry = MockConfigEntry(
         domain=DOMAIN,
         entry_id="week-profile-area",
@@ -252,8 +323,8 @@ async def test_set_week_profile_service_targets_thermostats_in_area(
     monkeypatch.setattr(
         connection,
         "set_week_profile",
-        lambda device_id, chunks, request_id: calls.append(
-            (device_id, chunks, request_id)
+        lambda device_id, chunks, request_id, request_group_id: calls.append(
+            (device_id, chunks, request_id, request_group_id)
         ),
     )
 
@@ -263,11 +334,16 @@ async def test_set_week_profile_service_targets_thermostats_in_area(
         {
             "area_id": room.id,
             "week_profile": _complete_profile(),
+            "request_id": "room-card-request",
         },
         blocking=True,
     )
 
     assert {call[0] for call in calls} == {12345, 67890}
     assert all(len(call[1]) == 7 for call in calls)
-    assert all(call[2] for call in calls)
+    assert len({call[2] for call in calls}) == 2
+    assert {call[3] for call in calls} == {"room-card-request"}
     assert set(config_entry.data["week_profiles"]) == {"12345", "67890"}
+    assert "Resolved week-profile target area" in caplog.text
+    assert "0x003039 via /dev/tty0" in caplog.text
+    assert "0x010932 via /dev/tty0" in caplog.text
