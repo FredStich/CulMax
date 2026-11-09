@@ -309,7 +309,8 @@ thermostat's LOC keypad lock.
 
 Call `maxcul.set_week_profile` with a thermostat selected from the service
 dialog's entity dropdown, or provide its hexadecimal address or saved friendly
-name, along with a complete seven-day schedule. Each line uses a weekday
+name. To target every CulMax thermostat assigned to a room, choose an area
+instead. Include a complete seven-day schedule. Each line uses a weekday
 followed by alternating temperatures and switch times; the last temperature
 applies until midnight. If the same address is paired through multiple CUL
 connections, also provide `device_path`. For example:
@@ -318,6 +319,22 @@ connections, also provide `device_path`. For example:
 action: maxcul.set_week_profile
 data:
   device_id: "67e2e"
+  week_profile: |-
+    Mon 21,06:00,17,22:00,16
+    Tue 21,06:00,17,22:00,16
+    Wed 21,06:00,17,22:00,16
+    Thu 21,06:00,17,22:00,16
+    Fri 21,06:00,17,22:00,16
+    Sat 21,08:00,17,23:00,16
+    Sun 21,08:00,17,23:00,16
+```
+
+For a complete room, use `area_id` instead of `device_id`:
+
+```yaml
+action: maxcul.set_week_profile
+data:
+  area_id: living_room
   week_profile: |-
     Mon 21,06:00,17,22:00,16
     Tue 21,06:00,17,22:00,16
@@ -457,7 +474,7 @@ attribute. Do not send the default schedule unless that is what you intend to
 program.
 
 If Home Assistant or the browser keeps a previous JavaScript copy after an
-update, change the resource URL to `/maxcul/week-profile-card.js?v=3` and
+update, change the resource URL to `/maxcul/week-profile-card.js?v=4` and
 reload the dashboard. Increase the version number on future updates.
 
 ## Associate and deassociate window contacts

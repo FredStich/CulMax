@@ -27,8 +27,9 @@ enable_pairing:
 set_week_profile:
   name: Set a thermostat's weekly schedule
   description: >-
-    Send a complete seven-day heating schedule to a thermostat. This is an
-    advanced setting. The schedule replaces the thermostat's current schedule.
+    Send a complete seven-day heating schedule to one thermostat or to every
+    CulMax thermostat assigned to an area. This is an advanced setting. The
+    schedule replaces the thermostat's current schedule.
   fields:
     device_id:
       name: Thermostat
@@ -39,6 +40,11 @@ set_week_profile:
             domain: climate
             device:
               integration: maxcul
+    area_id:
+      name: Room
+      description: Send the schedule to every CulMax thermostat in this area.
+      selector:
+        area:
     device_path:
       name: CUL connection (optional)
       description: >-

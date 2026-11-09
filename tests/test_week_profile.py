@@ -6,6 +6,9 @@ import pytest
 
 from homeassistant.const import CONF_DEVICES, CONF_NAME, CONF_TYPE
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -207,3 +210,64 @@ async def test_set_week_profile_service_targets_paired_thermostat(
         "request_id": calls[0][2],
         "status": "pending",
     }
+
+
+async def test_set_week_profile_service_targets_thermostats_in_area(
+    hass,
+    max_connection_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        entry_id="week-profile-area",
+        data={
+            CONF_DEVICE_PATH: "/dev/tty0",
+            CONF_DEVICES: {
+                "12345": {
+                    CONF_NAME: "Thermostat 1",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+                "67890": {
+                    CONF_NAME: "Thermostat 2",
+                    CONF_TYPE: HEATING_THERMOSTAT,
+                },
+            },
+        },
+    )
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    room = ar.async_get(hass).async_create("Living Room")
+    entity_registry = er.async_get(hass)
+    device_registry = dr.async_get(hass)
+    for entity in entity_registry.entities.values():
+        if entity.platform == DOMAIN and entity.device_id is not None:
+            device_registry.async_update_device(
+                entity.device_id, area_id=room.id
+            )
+
+    connection = max_connection_factory.connections["/dev/tty0"]
+    calls = []
+    monkeypatch.setattr(
+        connection,
+        "set_week_profile",
+        lambda device_id, chunks, request_id: calls.append(
+            (device_id, chunks, request_id)
+        ),
+    )
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_WEEK_PROFILE,
+        {
+            "area_id": room.id,
+            "week_profile": _complete_profile(),
+        },
+        blocking=True,
+    )
+
+    assert {call[0] for call in calls} == {12345, 67890}
+    assert all(len(call[1]) == 7 for call in calls)
+    assert all(call[2] for call in calls)
+    assert set(config_entry.data["week_profiles"]) == {"12345", "67890"}

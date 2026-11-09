@@ -550,12 +550,9 @@ class MaxculWeekProfileCard extends HTMLElement {
       );
       return;
     }
-    const targetIds = this._config.area_id
-      ? this._roomThermostatEntityIds()
-      : [this._config.device_id];
-    if (!targetIds.length) {
+    if (!this._config.area_id && !this._selectedThermostatState()) {
       this._setStatus(
-        "Im ausgewählten Raum wurden keine aktiven CulMax-Thermostate gefunden.",
+        `Thermostat „${this._config.device_id}“ wurde nicht gefunden.`,
         true,
         "mdi:alert-circle",
       );
@@ -570,46 +567,27 @@ class MaxculWeekProfileCard extends HTMLElement {
     );
 
     try {
-      const results = await Promise.allSettled(
-        targetIds.map((deviceId) => {
-          const serviceData = {
-            device_id: deviceId,
-            week_profile: this._serializeProfile(),
-          };
-          if (this._config.device_path) {
-            serviceData.device_path = this._config.device_path;
-          }
-          return this._hass.callService(
-            "maxcul",
-            "set_week_profile",
-            serviceData,
-          );
-        }),
-      );
-      const sentCount = results.filter(
-        (result) => result.status === "fulfilled",
-      ).length;
-      const failedCount = results.length - sentCount;
-      if (failedCount) {
-        const firstFailure = results.find(
-          (result) => result.status === "rejected",
-        );
-        const errorMessage =
-          firstFailure?.reason?.message || "Home-Assistant-Fehler";
-        this._setStatus(
-          `${sentCount} von ${results.length} Thermostaten haben den Sendeauftrag erhalten; ${failedCount} fehlgeschlagen. ${errorMessage}`,
-          true,
-          "mdi:alert-circle",
-        );
-      } else {
-        this._setStatus(
-          targetIds.length > 1
-            ? `Plan an alle ${sentCount} Thermostate gesendet. Warte auf Bestätigung …`
-            : "Plan abgeschickt. Warte auf Bestätigung …",
-          false,
-          "mdi:progress-clock",
-        );
+      const serviceData = {
+        week_profile: this._serializeProfile(),
+        ...(this._config.area_id
+          ? { area_id: this._config.area_id }
+          : { device_id: this._config.device_id }),
+      };
+      if (this._config.device_path) {
+        serviceData.device_path = this._config.device_path;
       }
+      await this._hass.callService(
+        "maxcul",
+        "set_week_profile",
+        serviceData,
+      );
+      this._setStatus(
+        this._config.area_id
+          ? "Wochenprofil an alle CulMax-Thermostate im Raum übertragen. Warte auf Bestätigung …"
+          : "Plan abgeschickt. Warte auf Bestätigung …",
+        false,
+        "mdi:progress-clock",
+      );
     } catch (error) {
       this._setStatus(
         `Senden fehlgeschlagen: ${error?.message || "Home-Assistant-Fehler"}`,

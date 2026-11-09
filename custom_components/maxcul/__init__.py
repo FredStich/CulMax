@@ -81,6 +81,7 @@ SERVICE_CONF_DEVICE_PATH = "device_path"
 SERVICE_CONF_DURATION = "duration"
 SERVICE_SET_WEEK_PROFILE = "set_week_profile"
 SERVICE_CONF_DEVICE_ID = "device_id"
+SERVICE_CONF_AREA_ID = "area_id"
 SERVICE_CONF_WEEK_PROFILE = "week_profile"
 CONF_WEEK_PROFILES = "week_profiles"
 SERVICE_ASSOCIATE = "associate"
@@ -98,12 +99,25 @@ ENABLE_PAIRING_SERVICE_SCHEMA = vol.Schema(
         ),
     }
 )
+
+
+def _validate_week_profile_service_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Require exactly one thermostat or area as the profile target."""
+    if (SERVICE_CONF_DEVICE_ID in data) == (SERVICE_CONF_AREA_ID in data):
+        raise vol.Invalid("Choose either device_id or area_id")
+    return data
+
+
 SET_WEEK_PROFILE_SERVICE_SCHEMA = vol.Schema(
-    {
-        vol.Required(SERVICE_CONF_DEVICE_ID): cv.string,
-        vol.Required(SERVICE_CONF_WEEK_PROFILE): cv.string,
-        vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
-    }
+    vol.All(
+        {
+            vol.Optional(SERVICE_CONF_DEVICE_ID): cv.string,
+            vol.Optional(SERVICE_CONF_AREA_ID): cv.string,
+            vol.Required(SERVICE_CONF_WEEK_PROFILE): cv.string,
+            vol.Optional(SERVICE_CONF_DEVICE_PATH): cv.string,
+        },
+        _validate_week_profile_service_data,
+    )
 )
 
 
@@ -344,12 +358,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     @callback
     def _service_set_week_profile(service: ServiceCall) -> None:
-        device_identifier = service.data[SERVICE_CONF_DEVICE_ID]
-        selected_entity_id = _resolve_association_entity(
-            hass, device_identifier, "climate"
-        )
-        if selected_entity_id is not None:
-            device_identifier = selected_entity_id
+        device_identifier = service.data.get(SERVICE_CONF_DEVICE_ID)
+        area_id = service.data.get(SERVICE_CONF_AREA_ID)
+        if device_identifier is not None:
+            selected_entity_id = _resolve_association_entity(
+                hass, device_identifier, "climate"
+            )
+            if selected_entity_id is not None:
+                device_identifier = selected_entity_id
         service_device_path = service.data.get(SERVICE_CONF_DEVICE_PATH)
         normalized_service_path = (
             normalize_device_path(service_device_path)
@@ -374,11 +390,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             ):
                 continue
 
-            known_devices = entry.data.get(CONF_DEVICES) or {}
-            candidates = _find_paired_device_candidates(
-                known_devices, device_identifier
-            )
-            for device_id, device in candidates:
+            if area_id is not None:
+                device_ids = _association_devices_in_area(
+                    hass, entry, area_id, "climate"
+                )
+            else:
+                if device_identifier is None:
+                    raise ServiceValidationError(
+                        "Choose either a thermostat or an area"
+                    )
+                known_devices = entry.data.get(CONF_DEVICES) or {}
+                candidates = _find_paired_device_candidates(
+                    known_devices, device_identifier
+                )
+                device_ids = [device_id for device_id, _ in candidates]
+
+            for device_id in device_ids:
+                device = (entry.data.get(CONF_DEVICES) or {}).get(device_id)
+                if not isinstance(device, dict):
+                    continue
                 matching_device_found = True
                 device_type = get_effective_device_type(
                     entry, device_id, device.get(CONF_TYPE)
@@ -400,7 +430,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     )
                 matching_entries.append((entry, numeric_device_id))
 
-        if len(matching_entries) > 1:
+        if area_id is None and len(matching_entries) > 1:
             raise ServiceValidationError(
                 "Thermostat identifier matches multiple paired devices or connections; "
                 "use its hexadecimal address and specify device_path if needed"
@@ -411,24 +441,34 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     f"Device {device_identifier} is not a supported thermostat"
                 )
             raise ServiceValidationError(
-                f"No loaded MaxCUL thermostat found for device {device_identifier}"
+                f"No loaded MaxCUL thermostat found for "
+                f"{'area ' + area_id if area_id is not None else 'device ' + device_identifier}"
             )
 
-        entry, numeric_device_id = matching_entries[0]
-        request_id = uuid4().hex
         profile = service.data[SERVICE_CONF_WEEK_PROFILE]
-        _store_week_profile_state(
-            hass, entry, numeric_device_id, profile, request_id, "pending"
-        )
-        try:
-            entry.runtime_data.set_week_profile(
-                numeric_device_id, chunks, request_id
-            )
-        except HomeAssistantError:
+        send_errors: list[tuple[int, HomeAssistantError]] = []
+        for entry, numeric_device_id in matching_entries:
+            request_id = uuid4().hex
             _store_week_profile_state(
-                hass, entry, numeric_device_id, profile, request_id, "failed"
+                hass, entry, numeric_device_id, profile, request_id, "pending"
             )
-            raise
+            try:
+                entry.runtime_data.set_week_profile(
+                    numeric_device_id, chunks, request_id
+                )
+            except HomeAssistantError as err:
+                _store_week_profile_state(
+                    hass, entry, numeric_device_id, profile, request_id, "failed"
+                )
+                send_errors.append((numeric_device_id, err))
+
+        if send_errors:
+            failed_ids = ", ".join(
+                f"{device_id:06x}" for device_id, _ in send_errors
+            )
+            raise ServiceValidationError(
+                f"Could not queue week profile for MAX! thermostat(s): {failed_ids}"
+            ) from send_errors[0][1]
 
     @callback
     def _service_associate(service: ServiceCall) -> None:
