@@ -411,7 +411,9 @@ resource:
 1. Open **Settings → Dashboards → Resources**.
 2. Add `/maxcul/week-profile-card.js` as a **JavaScript module** resource.
 3. Add a **Manual** card and choose **MAX! Wochenprofil**, or configure it in
-   YAML. Select the thermostat entity in the card editor.
+   YAML. In the card editor, select either one thermostat entity or a room.
+   Choosing a room sends the same profile to every active CulMax thermostat
+   assigned to that room.
 
 Example card YAML:
 
@@ -419,6 +421,17 @@ Example card YAML:
 type: custom:maxcul-week-profile
 device_id: climate.living_room
 ```
+
+To set the profile for every CulMax thermostat in a room, select the room in
+the card editor or specify its Home Assistant area ID:
+
+```yaml
+type: custom:maxcul-week-profile
+area_id: living_room
+```
+
+If thermostats in the room have different saved profiles, the card warns you
+which profile is shown before it sends that schedule to all of them.
 
 You can also use the hexadecimal device address:
 
@@ -432,9 +445,11 @@ device_id: "67e2e"
 Click a day's timeline to add a temperature change, then edit the times and
 temperatures in the fields. **Wochenprofil ans Thermostat senden** transmits
 the complete week. The card displays the last profile sent from Home
-Assistant—it cannot read the schedule back from the thermostat. A green check
-means the thermostat responded to the profile messages; a clock means the
-card is waiting for a response; a warning means no response arrived.
+Assistant—it cannot read the schedule back from the thermostat. For a room,
+the profile is stored and sent separately for each thermostat. A green check
+means every selected thermostat responded to the profile messages; a clock
+means the card is waiting for a response; a warning means at least one did not
+respond, a send failed, or the room's saved profiles differ.
 
 If the card shows 20 °C on every day, it has not loaded a saved profile for the
 selected thermostat. Check the selected entity and its `maxcul_week_profile`
@@ -442,7 +457,7 @@ attribute. Do not send the default schedule unless that is what you intend to
 program.
 
 If Home Assistant or the browser keeps a previous JavaScript copy after an
-update, change the resource URL to `/maxcul/week-profile-card.js?v=2` and
+update, change the resource URL to `/maxcul/week-profile-card.js?v=3` and
 reload the dashboard. Increase the version number on future updates.
 
 ## Associate and deassociate window contacts

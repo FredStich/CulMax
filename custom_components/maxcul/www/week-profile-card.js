@@ -82,7 +82,9 @@ class MaxculWeekProfileCard extends HTMLElement {
 
   setConfig(config) {
     const deviceId = String(config?.device_id || "").trim();
-    if (this._config && this._config.device_id !== deviceId) {
+    const areaId = String(config?.area_id || "").trim();
+    const targetKey = areaId ? `area:${areaId}` : `device:${deviceId}`;
+    if (this._config && this._targetKey !== targetKey) {
       this._schedule = makeDefaultSchedule();
       this._loadedProfileRequestId = null;
       this._status = "";
@@ -90,8 +92,10 @@ class MaxculWeekProfileCard extends HTMLElement {
     }
     this._config = {
       ...config,
-      device_id: deviceId,
+      device_id: areaId ? "" : deviceId,
+      area_id: areaId,
     };
+    this._targetKey = targetKey;
     this._render();
     this._syncProfileFromEntity();
   }
@@ -106,7 +110,43 @@ class MaxculWeekProfileCard extends HTMLElement {
   }
 
   _isThermostatSelected() {
-    return Boolean(this._config.device_id);
+    return Boolean(this._config.device_id || this._config.area_id);
+  }
+
+  _roomThermostatEntityIds() {
+    if (!this._hass || !this._config.area_id) return [];
+    const devices = this._hass.devices || {};
+    return Object.entries(this._hass.entities || {})
+      .filter(([entityId, entity]) => {
+        if (
+          entity.platform !== "maxcul" ||
+          !entityId.startsWith("climate.") ||
+          !this._hass.states[entityId]
+        ) {
+          return false;
+        }
+        const deviceAreaId = devices[entity.device_id]?.area_id;
+        return (
+          entity.area_id === this._config.area_id ||
+          deviceAreaId === this._config.area_id
+        );
+      })
+      .map(([entityId]) => entityId);
+  }
+
+  _selectedThermostatStates() {
+    if (!this._hass) return [];
+    if (this._config.area_id) {
+      return this._roomThermostatEntityIds()
+        .map((entityId) => this._hass.states[entityId])
+        .filter(Boolean);
+    }
+    const state = this._selectedThermostatState();
+    return state ? [state] : [];
+  }
+
+  _selectedRoomName() {
+    return this._hass?.areas?.[this._config.area_id]?.name || this._config.area_id;
   }
 
   _selectedThermostatState() {
@@ -135,16 +175,22 @@ class MaxculWeekProfileCard extends HTMLElement {
   }
 
   _syncProfileFromEntity() {
-    if (!this._hass || !this._config?.device_id) return;
-    const state = this._selectedThermostatState();
-    if (!state) {
+    if (!this._hass || !this._isThermostatSelected()) return;
+    const states = this._selectedThermostatStates();
+    if (!states.length) {
       this._setStatus(
-        `Thermostat „${this._config.device_id}“ nicht gefunden. Bitte eine gültige CulMax-Thermostat-Entität auswählen.`,
+        this._config.area_id
+          ? "Im ausgewählten Raum wurden keine aktiven CulMax-Thermostate gefunden."
+          : `Thermostat „${this._config.device_id}“ nicht gefunden. Bitte eine gültige CulMax-Thermostat-Entität auswählen.`,
         true,
         "mdi:alert-circle",
       );
       return;
     }
+    const statesWithProfile = states.filter(
+      (state) => typeof state.attributes?.maxcul_week_profile === "string",
+    );
+    const state = statesWithProfile[0] || states[0];
     const attributes = state.attributes || {};
     const profile = attributes.maxcul_week_profile;
     const requestId = attributes.maxcul_week_profile_request_id;
@@ -158,7 +204,7 @@ class MaxculWeekProfileCard extends HTMLElement {
         );
         return;
       }
-      const profileKey = requestId || profile;
+      const profileKey = `${requestId || profile}:${this._targetKey}`;
       if (profileKey !== this._loadedProfileRequestId) {
         this._schedule = loadedSchedule;
         this._loadedProfileRequestId = profileKey;
@@ -173,28 +219,58 @@ class MaxculWeekProfileCard extends HTMLElement {
       return;
     }
 
-    const status = attributes.maxcul_week_profile_status;
-    if (status === "acknowledged") {
+    if (
+      this._config.area_id &&
+      (statesWithProfile.length !== states.length ||
+        new Set(
+          statesWithProfile.map(
+            (profileState) => profileState.attributes.maxcul_week_profile,
+          ),
+        ).size > 1)
+    ) {
       this._setStatus(
-        "Plan ist beim Thermostat angekommen.",
-        false,
-        "mdi:check-circle",
-      );
-    } else if (status === "pending") {
-      this._setStatus(
-        "Warte auf Antwort vom Thermostat …",
-        false,
-        "mdi:progress-clock",
-      );
-    } else if (status === "failed") {
-      this._setStatus(
-        "Keine Antwort vom Thermostat. Prüfe, ob es eingeschaltet und in Funkreichweite ist.",
+        `Die Thermostate im Raum haben unterschiedliche gespeicherte Wochenprofile. Angezeigt wird das Profil von ${state.attributes?.friendly_name || state.entity_id}; beim Senden wird es auf alle ${states.length} Thermostate übertragen.`,
         true,
         "mdi:alert-circle",
       );
+      return;
+    }
+
+    const statuses = states.map(
+      (thermostatState) =>
+        thermostatState.attributes?.maxcul_week_profile_status,
+    );
+    const failedCount = statuses.filter((value) => value === "failed").length;
+    const pendingCount = statuses.filter((value) => value === "pending").length;
+    if (failedCount) {
+      this._setStatus(
+        this._config.area_id
+          ? `${failedCount} von ${states.length} Thermostaten haben nicht geantwortet. Prüfe, ob die Geräte eingeschaltet und in Funkreichweite sind.`
+          : "Keine Antwort vom Thermostat. Prüfe, ob es eingeschaltet und in Funkreichweite ist.",
+        true,
+        "mdi:alert-circle",
+      );
+    } else if (pendingCount) {
+      this._setStatus(
+        this._config.area_id
+          ? `Warte auf Antwort von ${pendingCount} Thermostaten …`
+          : "Warte auf Antwort vom Thermostat …",
+        false,
+        "mdi:progress-clock",
+      );
+    } else if (statuses.every((value) => value === "acknowledged")) {
+      this._setStatus(
+        this._config.area_id
+          ? `Alle ${states.length} Thermostate haben den Plan bestätigt.`
+          : "Plan ist beim Thermostat angekommen.",
+        false,
+        "mdi:check-circle",
+      );
     } else {
       this._setStatus(
-        "Zuletzt gesendeter Plan geladen.",
+        this._config.area_id
+          ? `Zuletzt gesendeter Plan geladen (${states.length} Thermostate im Raum).`
+          : "Zuletzt gesendeter Plan geladen.",
         false,
         "mdi:information-outline",
       );
@@ -243,12 +319,12 @@ class MaxculWeekProfileCard extends HTMLElement {
       </style>
       <ha-card>
         <h2>MAX! Wochenprofil</h2>
-        <div class="subtitle">${this._config.device_id ? `Thermostat ${this._escapeText(this._config.device_id)}` : "Thermostat in den Karteneinstellungen auswählen"}</div>
+        <div class="subtitle">${this._config.area_id ? `Raum ${this._escapeText(this._selectedRoomName())}` : this._config.device_id ? `Thermostat ${this._escapeText(this._config.device_id)}` : "Thermostat oder Raum in den Karteneinstellungen auswählen"}</div>
         <div class="notice">Das Profil wird lokal in Home Assistant gespeichert. Das tatsächlich im Thermostat gespeicherte Profil kann nicht ausgelesen werden; angezeigt wird das zuletzt gesendete Profil. Wenn noch keines gesendet wurde, startet der Editor mit 20 °C für alle Tage.</div>
         <p class="hint">Klicke in die Zeitleiste, um einen Schaltpunkt hinzuzufügen. Zeiten lassen sich in 5-Minuten-Schritten einstellen.</p>
         <div class="days"></div>
         <div class="actions">
-          <button class="save" ${this._isThermostatSelected() ? "" : "disabled"}>Wochenprofil ans Thermostat senden</button>
+          <button class="save" ${this._isThermostatSelected() ? "" : "disabled"}>${this._config.area_id ? "Wochenprofil an alle Thermostate im Raum senden" : "Wochenprofil ans Thermostat senden"}</button>
           <button class="secondary reset">Alle Tage auf 20 °C zurücksetzen</button>
           <div class="status" role="status" aria-live="polite">
             <ha-icon aria-hidden="true"></ha-icon>
@@ -466,9 +542,20 @@ class MaxculWeekProfileCard extends HTMLElement {
       );
       return;
     }
-    if (!this._config.device_id) {
+    if (!this._isThermostatSelected()) {
       this._setStatus(
-        "Bitte ein Thermostat auswählen.",
+        "Bitte ein Thermostat oder einen Raum auswählen.",
+        true,
+        "mdi:alert-circle",
+      );
+      return;
+    }
+    const targetIds = this._config.area_id
+      ? this._roomThermostatEntityIds()
+      : [this._config.device_id];
+    if (!targetIds.length) {
+      this._setStatus(
+        "Im ausgewählten Raum wurden keine aktiven CulMax-Thermostate gefunden.",
         true,
         "mdi:alert-circle",
       );
@@ -482,21 +569,47 @@ class MaxculWeekProfileCard extends HTMLElement {
       "mdi:send",
     );
 
-    const serviceData = {
-      device_id: this._config.device_id,
-      week_profile: this._serializeProfile(),
-    };
-    if (this._config.device_path) {
-      serviceData.device_path = this._config.device_path;
-    }
-
     try {
-      await this._hass.callService("maxcul", "set_week_profile", serviceData);
-      this._setStatus(
-        "Plan abgeschickt. Warte auf Bestätigung …",
-        false,
-        "mdi:progress-clock",
+      const results = await Promise.allSettled(
+        targetIds.map((deviceId) => {
+          const serviceData = {
+            device_id: deviceId,
+            week_profile: this._serializeProfile(),
+          };
+          if (this._config.device_path) {
+            serviceData.device_path = this._config.device_path;
+          }
+          return this._hass.callService(
+            "maxcul",
+            "set_week_profile",
+            serviceData,
+          );
+        }),
       );
+      const sentCount = results.filter(
+        (result) => result.status === "fulfilled",
+      ).length;
+      const failedCount = results.length - sentCount;
+      if (failedCount) {
+        const firstFailure = results.find(
+          (result) => result.status === "rejected",
+        );
+        const errorMessage =
+          firstFailure?.reason?.message || "Home-Assistant-Fehler";
+        this._setStatus(
+          `${sentCount} von ${results.length} Thermostaten haben den Sendeauftrag erhalten; ${failedCount} fehlgeschlagen. ${errorMessage}`,
+          true,
+          "mdi:alert-circle",
+        );
+      } else {
+        this._setStatus(
+          targetIds.length > 1
+            ? `Plan an alle ${sentCount} Thermostate gesendet. Warte auf Bestätigung …`
+            : "Plan abgeschickt. Warte auf Bestätigung …",
+          false,
+          "mdi:progress-clock",
+        );
+      }
     } catch (error) {
       this._setStatus(
         `Senden fehlgeschlagen: ${error?.message || "Home-Assistant-Fehler"}`,
@@ -562,6 +675,11 @@ class MaxculWeekProfileCardEditor extends HTMLElement {
     entityPicker.value = this._config.device_id || "";
   }
 
+  _configureAreaPicker(areaPicker) {
+    areaPicker.hass = this._hass;
+    areaPicker.value = this._config.area_id || "";
+  }
+
   _render() {
     this.shadowRoot.innerHTML = `
       <style>
@@ -569,16 +687,33 @@ class MaxculWeekProfileCardEditor extends HTMLElement {
         input, ha-entity-picker { box-sizing: border-box; display: block; width: 100%; min-height: 40px; margin-top: 5px; }
         p { color: var(--secondary-text-color); }
       </style>
-      <p>Wähle das CulMax-Thermostat aus der Liste aus. Alternativ kann in YAML eine Hex-Adresse oder der Friendly Name angegeben werden.</p>
+      <p>Wähle entweder ein CulMax-Thermostat oder einen Raum. Bei einem Raum wird das Wochenprofil an alle aktiven CulMax-Thermostate in diesem Raum gesendet.</p>
       <label>Thermostat<ha-entity-picker class="device-id"></ha-entity-picker></label>
+      <label>Oder gesamter Raum<ha-area-picker class="area-id"></ha-area-picker></label>
       <label>CUL-Verbindung (optional)<input class="device-path" placeholder="/dev/ttyUSB0"></label>
     `;
     const deviceId = this.shadowRoot.querySelector(".device-id");
+    const areaId = this.shadowRoot.querySelector(".area-id");
     const devicePath = this.shadowRoot.querySelector(".device-path");
     this._configureEntityPicker(deviceId);
+    this._configureAreaPicker(areaId);
     devicePath.value = this._config.device_path || "";
     deviceId.addEventListener("value-changed", (event) => {
-      this._config = { ...this._config, device_id: event.detail.value || "" };
+      this._config = {
+        ...this._config,
+        device_id: event.detail.value || "",
+        area_id: "",
+      };
+      areaId.value = "";
+      this._dispatchConfigChanged();
+    });
+    areaId.addEventListener("value-changed", (event) => {
+      this._config = {
+        ...this._config,
+        area_id: event.detail.value || "",
+        device_id: "",
+      };
+      deviceId.value = "";
       this._dispatchConfigChanged();
     });
     devicePath.addEventListener("input", () => {
